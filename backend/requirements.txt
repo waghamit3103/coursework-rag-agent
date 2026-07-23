@@ -2,3 +2,7 @@
 # this file rather than replacing it, so `pip install -r requirements.txt`
 # always gives a working environment for wherever the project currently is.
 pypdf==5.1.0
+
+# Stage 2 (embedding + ChromaDB storage)
+voyageai==0.5.0
+python-dotenv==1.2.2
