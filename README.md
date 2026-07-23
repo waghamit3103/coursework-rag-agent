@@ -6,9 +6,9 @@ with grounded, cited answers. Claude decides when to search, evaluates whether
 results actually answer the question, and re-queries when they don't — this is
 an agent with a retrieval tool, not a fixed retrieve-then-generate pipeline.
 
-**Status:** Stage 4 of 10 complete (ingestion/chunking + embedding/vector
-storage + retrieval + agent loop). See [ARCHITECTURE.md](ARCHITECTURE.md)
-for the full design and the build plan.
+**Status:** Stage 5 of 10 complete (ingestion/chunking + embedding/vector
+storage + retrieval + agent loop + Flask API/React frontend). See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the full design and the build plan.
 
 ## Project layout
 
@@ -33,10 +33,15 @@ backend/
       loop.py                   # run_agent_turn(): the hand-written tool-use loop
       conversation.py            # Conversation: multi-turn history across calls
       claude_client.py            # builds the real Anthropic client from ANTHROPIC_API_KEY
+    api/
+      app.py                   # create_app(client, embedder, store) Flask factory
+      routes.py                 # /api/chat, /api/courses, /api/health
+      sessions.py                # ConversationStore: in-memory, keyed by conversation_id
   scripts/
     run_ingestion.py        # CLI: chunk everything, write data/processed/chunks.jsonl
     run_embedding.py         # CLI: embed chunks.jsonl, persist to data/chroma/
     chat.py                   # CLI: interactive chat with the agent
+    run_api.py                 # Flask dev server (falls back to a canned agent if no key yet)
   tests/
     fixtures/                # sample .md / .txt / .pdf used by the test suite
     fakes.py                  # FakeVoyageClient + ScriptedVoyageClient (no network in tests)
@@ -45,17 +50,27 @@ backend/
     test_voyage_client.py / test_store.py / test_embedding_pipeline.py
     test_retriever.py
     test_agent_tools.py / test_loop.py / test_conversation.py
+    test_api.py / test_sessions.py
   data/
     raw_notes/<course>/<topic>/   # sample notes ship here (see below)
     processed/                     # chunks.jsonl output (gitignored)
     chroma/                         # ChromaDB persistence (gitignored)
-frontend/                    # React chat UI (Stage 5)
+frontend/
+  src/
+    api.js                   # fetch wrapper for the Flask API
+    App.jsx                    # renders <Chat />
+    components/
+      Chat.jsx                  # message list + input, holds all chat state
+      MessageBubble.jsx           # one message (user or assistant)
+      SourceList.jsx               # citations + scores under an assistant message
+      LoadingIndicator.jsx          # "thinking" indicator while awaiting a response
 .github/workflows/           # CI (Stage 8)
 ```
 
 ## Setup
 
-Requires Python 3.11+ (developed against 3.13).
+Requires Python 3.11+ (developed against 3.13) and Node 18+ (developed
+against Node 24).
 
 ```bash
 cd backend
@@ -65,6 +80,11 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 # then edit .env and set VOYAGE_API_KEY (https://dashboard.voyageai.com)
 # and ANTHROPIC_API_KEY (https://console.anthropic.com)
+```
+
+```bash
+cd frontend
+npm install
 ```
 
 ## Notes data
@@ -161,12 +181,34 @@ round robin scheduling handles fairness"), or something the notes don't
 cover — the agent should say so rather than answer from general
 knowledge. Sources used are printed under each answer.
 
+## Run the full app (API + frontend)
+
+```bash
+# Terminal 1 — backend
+cd backend
+python scripts/run_api.py            # http://localhost:5000
+
+# Terminal 2 — frontend
+cd frontend
+npm run dev                          # http://localhost:5173
+```
+
+If `ANTHROPIC_API_KEY` isn't set yet, `run_api.py` falls back to a
+canned-response agent (loudly logged, never silent) so the whole stack —
+routing, CORS, session handling, the React UI — can be exercised end to
+end before the real key exists. Set the key and restart for real,
+grounded answers.
+
 ## Run tests
 
 ```bash
 cd backend
 pytest -q
 ```
+
+(No frontend test framework yet — see
+[ARCHITECTURE.md](ARCHITECTURE.md#flask-api--react-frontend-stage-5) for
+why, and how the UI was verified instead.)
 
 ## Design decisions
 
@@ -213,8 +255,16 @@ reasoning — short version:
   and second-guesses the model. The `search_notes` tool's `course_filter`
   enum is derived from the vector store's actual contents rather than
   hardcoded, so it can't drift from what's really in `data/raw_notes/`.
+- **API/frontend**: Flask's `create_app(client, embedder, store)` takes
+  its dependencies as arguments, same as every layer below it — which is
+  what let the entire stack (including the real React UI, in a real
+  browser) get built and manually verified before the Anthropic key
+  existed. Conversation state is a plain in-memory dict keyed by
+  `conversation_id` — a deliberate, documented scope boundary for a
+  single-instance deployment, not an oversight. No manual course-filter
+  control in the UI: the agent deciding when to use it autonomously is
+  the point of the project.
 
 ## Coming next
 
-- Stage 5: Flask API + React chat UI.
 - Stage 6+: full pytest suite, Docker, CI, deployment, evaluation script.

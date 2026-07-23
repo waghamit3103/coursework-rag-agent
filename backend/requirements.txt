@@ -10,3 +10,7 @@ chromadb==1.5.9
 
 # Stage 4 (agent loop with Claude tool use)
 anthropic==0.118.0
+
+# Stage 5 (Flask API)
+flask==3.1.3
+flask-cors==6.0.5

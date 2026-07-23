@@ -17,19 +17,19 @@ flowchart TB
         Notes --> Loaders --> Chunker --> Chunks["Chunk + ChunkMetadata\n(course, topic, source_file, section/page)"]
     end
 
-    subgraph Embed["Embedding + storage (Stage 2 — planned)"]
+    subgraph Embed["Embedding + storage (Stage 2 — done)"]
         Chunks --> VoyageAPI["Voyage AI\nvoyage-3-large"]
         VoyageAPI --> Chroma[("ChromaDB\npersisted to disk")]
     end
 
-    subgraph Retrieval["Retrieval (Stage 3 — planned)"]
+    subgraph Retrieval["Retrieval (Stage 3 — done)"]
         Query["query text + optional course_filter"] --> RetrieveFn["retrieve(query, course_filter)"]
         Chroma --> RetrieveFn
         RetrieveFn --> TopK["Top-k chunks + scores"]
     end
 
-    subgraph Agent["Agent loop (Stage 4 — planned)"]
-        User["User message"] --> ClaudeAPI["Claude API\n(tool use)"]
+    subgraph Agent["Agent loop (Stage 4 — done)"]
+        UserMsg["User message"] --> ClaudeAPI["Claude API\n(tool use)"]
         ClaudeAPI -- "calls search_notes(query, course_filter?)" --> Tool["search_notes tool"]
         Tool --> RetrieveFn
         TopK --> Tool
@@ -38,9 +38,10 @@ flowchart TB
         ClaudeAPI --> FinalAnswer["Final answer + citations"]
     end
 
-    subgraph App["Application (Stage 5 — planned)"]
-        ReactUI["React chat UI"] <--> FlaskAPI["Flask REST API"]
-        FlaskAPI <--> ClaudeAPI
+    subgraph App["Application (Stage 5 — done)"]
+        ReactUI["React chat UI\n(Vite dev server / static build)"] <--> FlaskAPI["Flask REST API\n/api/chat, /api/courses, /api/health"]
+        FlaskAPI --> ConvoStore[("ConversationStore\nin-memory, per conversation_id")]
+        FlaskAPI --> UserMsg
     end
 ```
 
@@ -341,13 +342,76 @@ snapshotting (`list(messages)`) at call time. Worth remembering when
 building any test double around a loop that mutates a shared list across
 iterations.
 
+### Flask API + React frontend (Stage 5)
+
+**Every Flask component takes its dependencies as constructor arguments,
+same as every layer before it.** `create_app(client, embedder, store)`
+takes the same three objects `Conversation` and `run_agent_turn` already
+take. This isn't just stylistic consistency — it's what made it possible
+to build and manually verify the *entire* stack (routes, session
+handling, and the real React UI in a real browser) before the Anthropic
+key existed at all: tests inject `FakeAnthropicClient`, and a small dev
+script (`scripts/run_api.py`) injects a minimal canned-response stand-in
+when `ANTHROPIC_API_KEY` isn't set, loudly logging that it's doing so.
+Neither path required touching application code to swap in.
+
+**Session state is a plain in-process dict, not Redis.** `ConversationStore`
+maps a server-issued `conversation_id` to a `Conversation` object,
+in-memory. This is a deliberate scope boundary, not an oversight: it's
+adequate for a single-instance free-tier deployment (this project's actual
+target), but it means state is lost on restart and can't be shared across
+multiple worker processes. A production system serving real concurrent
+traffic would move this to Redis, or shift to a stateless design where the
+client resends full history each request (closer to how the Claude API
+itself works) — both reasonable next steps, deliberately out of scope here.
+
+**An unknown `conversation_id` silently starts a fresh conversation under
+that same id, rather than returning a 404.** If the server restarted and
+lost its in-memory state, or a client sends a stale id, failing the
+request outright would strand the user mid-conversation with no way to
+recover except starting over anyway. Starting fresh silently produces the
+same practical outcome (lost context) with a better failure mode (the chat
+keeps working) — a deliberate leniency trade-off, not a missed edge case.
+
+**Errors from the agent loop are caught at the route boundary and turned
+into a generic 502 with a clean JSON body — never a raw stack trace.**
+`route.py`'s `/chat` handler wraps `conversation.send()` in a broad
+`except Exception`, logs the real exception server-side via
+`current_app.logger.exception`, and returns a message with no internal
+detail leaked to the client. This matters more than it might for a typical
+CRUD endpoint because the thing being called (the Claude API, the Voyage
+API, ChromaDB) is three network dependencies deep — plenty of ways for a
+transient failure to surface, and none of them are things a chat user
+should see a Python traceback about.
+
+**No manual course-filter control in the UI.** The `search_notes` tool
+already accepts an optional `course_filter`, and the whole point of this
+project is that *the agent* decides when and how to use it — adding a
+dropdown that lets the user override that decision would undercut the
+"agentic, not a fixed pipeline" pitch the project is built around. The
+chat header does surface which courses exist (fetched from `GET
+/api/courses`, itself backed by `NotesStore.distinct_courses()`) so the
+user knows what's searchable, without the UI making retrieval decisions
+on the agent's behalf.
+
+**No frontend test framework** was added for this stage — the non-functional
+requirements call out pytest coverage for chunking, retrieval, and API
+endpoints specifically, not a frontend test suite. Frontend correctness
+was instead verified by actually running both dev servers and driving the
+real UI in a real browser: the chat flow end-to-end, the Enter-to-send and
+disabled-empty-input behavior, error handling (killed the Flask process
+mid-conversation and confirmed a clean error bubble rather than a crash),
+and the sources-list rendering (verified by intercepting `fetch` in the
+browser to inject a response shaped like a real one, since the no-key dev
+fallback never actually calls `search_notes`).
+
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
 2. ✅ Embedding (Voyage AI `voyage-3-large`) + ChromaDB storage
 3. ✅ Retrieval logic (standalone, testable without the agent loop)
 4. ✅ Agent loop with Claude tool use (`search_notes`)
-5. Flask API + React chat frontend
+5. ✅ Flask API + React chat frontend
 6. pytest suite (chunking, retrieval, API)
 7. Docker + docker-compose
 8. GitHub Actions CI
