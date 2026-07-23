@@ -27,12 +27,16 @@ than the harness trying to second-guess whether a result set was "good
 enough."
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 from app import config
 from app.agent.prompts import SYSTEM_PROMPT
-from app.agent.tools import SEARCH_NOTES_TOOL_NAME, build_search_notes_tool, execute_search_notes
+from app.agent.tools import (
+    SEARCH_NOTES_TOOL_NAME,
+    build_search_notes_tool,
+    execute_search_notes,
+)
 from app.embedding.store import NotesStore
 from app.embedding.voyage_client import VoyageEmbedder
 from app.retrieval.retriever import RetrievedChunk

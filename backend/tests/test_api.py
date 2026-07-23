@@ -7,7 +7,12 @@ from app.embedding.pipeline import embed_and_store
 from app.embedding.store import NotesStore
 from app.ingestion.models import Chunk, ChunkMetadata
 from tests.conftest import make_embedder as _embedder
-from tests.fake_anthropic import FakeAnthropicClient, FakeMessage, FakeTextBlock, FakeToolUseBlock
+from tests.fake_anthropic import (
+    FakeAnthropicClient,
+    FakeMessage,
+    FakeTextBlock,
+    FakeToolUseBlock,
+)
 from tests.fakes import FakeVoyageClient
 
 
@@ -82,7 +87,9 @@ class TestChat:
             [
                 FakeMessage(
                     content=[
-                        FakeToolUseBlock(id="tu1", name="search_notes", input={"query": "bst"})
+                        FakeToolUseBlock(
+                            id="tu1", name="search_notes", input={"query": "bst"}
+                        )
                     ],
                     stop_reason="tool_use",
                 ),
@@ -161,7 +168,9 @@ class TestChat:
             def __init__(self):
                 self.messages = BoomingMessages()
 
-        app = create_app(client=BoomingClient(), embedder=_embedder(FakeVoyageClient()), store=store)
+        app = create_app(
+            client=BoomingClient(), embedder=_embedder(FakeVoyageClient()), store=store
+        )
         app.config["TESTING"] = True
 
         resp = app.test_client().post("/api/chat", json={"message": "hi"})

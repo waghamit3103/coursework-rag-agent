@@ -7,7 +7,12 @@ from app.embedding.pipeline import embed_and_store
 from app.embedding.store import NotesStore
 from app.ingestion.models import Chunk, ChunkMetadata
 from tests.conftest import make_embedder as _embedder
-from tests.fake_anthropic import FakeAnthropicClient, FakeMessage, FakeTextBlock, FakeToolUseBlock
+from tests.fake_anthropic import (
+    FakeAnthropicClient,
+    FakeMessage,
+    FakeTextBlock,
+    FakeToolUseBlock,
+)
 from tests.fakes import FakeVoyageClient
 
 
@@ -38,9 +43,15 @@ def store(tmp_path: Path) -> NotesStore:
 class TestConversation:
     def test_first_message_starts_history(self, store: NotesStore):
         client = FakeAnthropicClient(
-            responses=[FakeMessage(content=[FakeTextBlock(text="hello there")], stop_reason="end_turn")]
+            responses=[
+                FakeMessage(
+                    content=[FakeTextBlock(text="hello there")], stop_reason="end_turn"
+                )
+            ]
         )
-        convo = Conversation(client=client, embedder=_embedder(FakeVoyageClient()), store=store)
+        convo = Conversation(
+            client=client, embedder=_embedder(FakeVoyageClient()), store=store
+        )
 
         result = convo.send("hi")
 
@@ -50,11 +61,17 @@ class TestConversation:
     def test_second_message_includes_first_turns_history(self, store: NotesStore):
         client = FakeAnthropicClient(
             responses=[
-                FakeMessage(content=[FakeTextBlock(text="answer one")], stop_reason="end_turn"),
-                FakeMessage(content=[FakeTextBlock(text="answer two")], stop_reason="end_turn"),
+                FakeMessage(
+                    content=[FakeTextBlock(text="answer one")], stop_reason="end_turn"
+                ),
+                FakeMessage(
+                    content=[FakeTextBlock(text="answer two")], stop_reason="end_turn"
+                ),
             ]
         )
-        convo = Conversation(client=client, embedder=_embedder(FakeVoyageClient()), store=store)
+        convo = Conversation(
+            client=client, embedder=_embedder(FakeVoyageClient()), store=store
+        )
 
         convo.send("first question")
         convo.send("second question")
@@ -69,15 +86,23 @@ class TestConversation:
             responses=[
                 FakeMessage(
                     content=[
-                        FakeToolUseBlock(id="tu1", name="search_notes", input={"query": "bst"})
+                        FakeToolUseBlock(
+                            id="tu1", name="search_notes", input={"query": "bst"}
+                        )
                     ],
                     stop_reason="tool_use",
                 ),
-                FakeMessage(content=[FakeTextBlock(text="answer one")], stop_reason="end_turn"),
-                FakeMessage(content=[FakeTextBlock(text="answer two")], stop_reason="end_turn"),
+                FakeMessage(
+                    content=[FakeTextBlock(text="answer one")], stop_reason="end_turn"
+                ),
+                FakeMessage(
+                    content=[FakeTextBlock(text="answer two")], stop_reason="end_turn"
+                ),
             ]
         )
-        convo = Conversation(client=client, embedder=_embedder(FakeVoyageClient()), store=store)
+        convo = Conversation(
+            client=client, embedder=_embedder(FakeVoyageClient()), store=store
+        )
 
         convo.send("what is a bst?")
         convo.send("follow-up question")
@@ -86,7 +111,12 @@ class TestConversation:
         # and its tool_result from the first question.
         third_call_messages = client.messages.calls[2]["messages"]
         roles_and_shapes = [
-            (m["role"], type(m["content"]).__name__ if not isinstance(m["content"], list) else "list")
+            (
+                m["role"],
+                type(m["content"]).__name__
+                if not isinstance(m["content"], list)
+                else "list",
+            )
             for m in third_call_messages
         ]
         assert ("user", "list") in roles_and_shapes  # the tool_result turn

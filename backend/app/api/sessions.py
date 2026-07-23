@@ -40,6 +40,8 @@ class ConversationStore:
             return conversation_id, self._conversations[conversation_id]
 
         new_id = conversation_id or str(uuid.uuid4())
-        conversation = Conversation(client=self._client, embedder=self._embedder, store=self._store)
+        conversation = Conversation(
+            client=self._client, embedder=self._embedder, store=self._store
+        )
         self._conversations[new_id] = conversation
         return new_id, conversation

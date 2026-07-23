@@ -104,6 +104,8 @@ def test_leaves_other_files_untouched_on_reembed(tmp_path: Path):
     assert store.count() == 2
 
     # Re-embed only bst.md.
-    embed_and_store([_chunk("dsa", "trees", "bst.md", 0, text="edited")], embedder, store)
+    embed_and_store(
+        [_chunk("dsa", "trees", "bst.md", 0, text="edited")], embedder, store
+    )
 
     assert store.count() == 2

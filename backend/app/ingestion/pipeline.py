@@ -87,7 +87,10 @@ def _chunk_markdown_file(path: Path, course: str, topic: str) -> List[Chunk]:
 def _chunk_text_file(path: Path, course: str, topic: str) -> List[Chunk]:
     text = load_text_file(path)
     chunks = fixed_size_chunks(
-        text, config.CHUNK_SIZE_WORDS, config.CHUNK_OVERLAP_WORDS, config.MIN_CHUNK_WORDS
+        text,
+        config.CHUNK_SIZE_WORDS,
+        config.CHUNK_OVERLAP_WORDS,
+        config.MIN_CHUNK_WORDS,
     )
     return [
         Chunk(

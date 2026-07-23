@@ -17,7 +17,9 @@ def store(tmp_path: Path) -> NotesStore:
 @pytest.fixture
 def conversation_store(store: NotesStore) -> ConversationStore:
     return ConversationStore(
-        client=FakeAnthropicClient(responses=[]), embedder=_embedder(FakeVoyageClient()), store=store
+        client=FakeAnthropicClient(responses=[]),
+        embedder=_embedder(FakeVoyageClient()),
+        store=store,
     )
 
 
@@ -40,7 +42,9 @@ class TestConversationStore:
     def test_unknown_id_starts_fresh_under_that_same_id(
         self, conversation_store: ConversationStore
     ):
-        conversation_id, conversation = conversation_store.get_or_create("some-unknown-id")
+        conversation_id, conversation = conversation_store.get_or_create(
+            "some-unknown-id"
+        )
 
         assert conversation_id == "some-unknown-id"
         assert conversation.messages == []

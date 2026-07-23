@@ -44,7 +44,9 @@ def build_search_notes_tool(store: NotesStore) -> dict:
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Natural-language description of what to find in the notes.",
+                    "description": (
+                        "Natural-language description of what to find in the notes."
+                    ),
                 },
                 "course_filter": {
                     "type": "string",
@@ -78,7 +80,10 @@ def execute_search_notes(
 
 def _format_results(results: List[RetrievedChunk]) -> str:
     if not results:
-        return "No matching passages found. Try different search terms, or omit the course filter."
+        return (
+            "No matching passages found. Try different search terms, "
+            "or omit the course filter."
+        )
 
     lines = [f"Found {len(results)} passage(s):", ""]
     for i, r in enumerate(results, start=1):

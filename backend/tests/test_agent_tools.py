@@ -40,7 +40,10 @@ class TestBuildSearchNotesTool:
         tool = build_search_notes_tool(store)
 
         assert tool["name"] == "search_notes"
-        assert set(tool["input_schema"]["properties"]["course_filter"]["enum"]) == {"dsa", "oop"}
+        assert set(tool["input_schema"]["properties"]["course_filter"]["enum"]) == {
+            "dsa",
+            "oop",
+        }
         assert tool["input_schema"]["required"] == ["query"]
 
     def test_empty_store_produces_empty_enum_not_an_error(self, store: NotesStore):
@@ -51,7 +54,12 @@ class TestBuildSearchNotesTool:
 class TestExecuteSearchNotes:
     def test_formats_results_with_score_and_citation(self, store: NotesStore):
         chunk = _chunk(
-            "dsa", "trees", "bst.md", 0, text="a binary search tree definition", section="Intro"
+            "dsa",
+            "trees",
+            "bst.md",
+            0,
+            text="a binary search tree definition",
+            section="Intro",
         )
         client = FakeVoyageClient()
         embed_and_store([chunk], _embedder(client), store)
@@ -63,9 +71,13 @@ class TestExecuteSearchNotes:
         assert "a binary search tree definition" in text
         assert "score=" in text
 
-    def test_no_matches_returns_helpful_message_not_empty_string(self, store: NotesStore):
+    def test_no_matches_returns_helpful_message_not_empty_string(
+        self, store: NotesStore
+    ):
         client = FakeVoyageClient()
-        text, results = execute_search_notes({"query": "anything"}, _embedder(client), store)
+        text, results = execute_search_notes(
+            {"query": "anything"}, _embedder(client), store
+        )
 
         assert results == []
         assert "No matching passages" in text

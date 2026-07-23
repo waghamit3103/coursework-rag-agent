@@ -1,6 +1,10 @@
 import pytest
 
-from app.embedding.voyage_client import VoyageEmbedder, VoyageEmbeddingError, build_default_embedder
+from app.embedding.voyage_client import (
+    VoyageEmbedder,
+    VoyageEmbeddingError,
+    build_default_embedder,
+)
 from tests.fakes import FakeVoyageClient
 
 

@@ -75,7 +75,9 @@ class TestSplitMarkdownIntoSections:
 class TestFixedSizeChunks:
     def test_short_text_returns_single_chunk(self):
         text = " ".join(f"word{i}" for i in range(10))
-        chunks = fixed_size_chunks(text, chunk_size_words=100, overlap_words=10, min_chunk_words=5)
+        chunks = fixed_size_chunks(
+            text, chunk_size_words=100, overlap_words=10, min_chunk_words=5
+        )
         assert len(chunks) == 1
         assert chunks[0] == text
 
@@ -86,7 +88,9 @@ class TestFixedSizeChunks:
     def test_exact_multiple_splits_evenly_with_overlap(self):
         words = [f"w{i}" for i in range(20)]
         text = " ".join(words)
-        chunks = fixed_size_chunks(text, chunk_size_words=10, overlap_words=2, min_chunk_words=1)
+        chunks = fixed_size_chunks(
+            text, chunk_size_words=10, overlap_words=2, min_chunk_words=1
+        )
         # step = 8: windows are [0:10], [8:18], [16:20]... but last window
         # ([16:20], 4 words) is below min_chunk_words=1? no, 4 >= 1, so it
         # stays separate. Verify overlap between consecutive chunks.
@@ -96,7 +100,9 @@ class TestFixedSizeChunks:
     def test_overlap_words_present_in_consecutive_chunks(self):
         words = [f"w{i}" for i in range(30)]
         text = " ".join(words)
-        chunks = fixed_size_chunks(text, chunk_size_words=10, overlap_words=3, min_chunk_words=1)
+        chunks = fixed_size_chunks(
+            text, chunk_size_words=10, overlap_words=3, min_chunk_words=1
+        )
         for i in range(len(chunks) - 1):
             tail = chunks[i].split()[-3:]
             head = chunks[i + 1].split()[:3]
@@ -109,7 +115,9 @@ class TestFixedSizeChunks:
         words = [f"w{i}" for i in range(22)]
         text = " ".join(words)
         # step = 10 - 2 = 8; windows: [0:10], [8:18], [16:22] -> last has 6 words
-        chunks = fixed_size_chunks(text, chunk_size_words=10, overlap_words=2, min_chunk_words=8)
+        chunks = fixed_size_chunks(
+            text, chunk_size_words=10, overlap_words=2, min_chunk_words=8
+        )
         # last window (6 words) < min_chunk_words (8) -> merged into previous
         assert len(chunks) == 2
         assert chunks[-1].split()[-6:] == words[-6:]
@@ -118,14 +126,20 @@ class TestFixedSizeChunks:
         import pytest
 
         with pytest.raises(ValueError):
-            fixed_size_chunks("a b c", chunk_size_words=5, overlap_words=5, min_chunk_words=1)
+            fixed_size_chunks(
+                "a b c", chunk_size_words=5, overlap_words=5, min_chunk_words=1
+            )
 
 
 class TestChunkMarkdown:
     def test_small_section_stays_whole(self):
         text = "# Title\n\nShort content."
         results = chunk_markdown(
-            text, chunk_size_words=300, overlap_words=50, max_section_words=450, min_chunk_words=40
+            text,
+            chunk_size_words=300,
+            overlap_words=50,
+            max_section_words=450,
+            min_chunk_words=40,
         )
         assert len(results) == 1
         chunk_text, section, method = results[0]
@@ -137,7 +151,11 @@ class TestChunkMarkdown:
         big_content = " ".join(f"word{i}" for i in range(1000))
         text = f"# Big Section\n\n{big_content}"
         results = chunk_markdown(
-            text, chunk_size_words=300, overlap_words=50, max_section_words=450, min_chunk_words=40
+            text,
+            chunk_size_words=300,
+            overlap_words=50,
+            max_section_words=450,
+            min_chunk_words=40,
         )
         assert len(results) > 1
         for _, section, method in results:
@@ -147,7 +165,11 @@ class TestChunkMarkdown:
     def test_headingless_document_falls_back_to_fixed_size_via_none_section(self):
         text = " ".join(f"word{i}" for i in range(500))
         results = chunk_markdown(
-            text, chunk_size_words=300, overlap_words=50, max_section_words=450, min_chunk_words=40
+            text,
+            chunk_size_words=300,
+            overlap_words=50,
+            max_section_words=450,
+            min_chunk_words=40,
         )
         assert len(results) > 1
         for _, section, method in results:
@@ -157,7 +179,11 @@ class TestChunkMarkdown:
     def test_multiple_sections_each_chunked_independently(self):
         text = "# One\ncontent one\n# Two\ncontent two\n"
         results = chunk_markdown(
-            text, chunk_size_words=300, overlap_words=50, max_section_words=450, min_chunk_words=40
+            text,
+            chunk_size_words=300,
+            overlap_words=50,
+            max_section_words=450,
+            min_chunk_words=40,
         )
         sections = [section for _, section, _ in results]
         assert sections == ["One", "Two"]

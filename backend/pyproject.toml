@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# Default rule set (E/F) — unused imports, undefined names, obvious bugs.
+# Not opting into stricter rule families (import sorting, docstring
+# conventions, etc.) for this project's scope; the goal is catching real
+# mistakes in CI, not enforcing a broader style guide.
+select = ["E", "F"]

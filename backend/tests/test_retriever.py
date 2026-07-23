@@ -12,7 +12,9 @@ from tests.conftest import make_embedder as _embedder
 from tests.fakes import FakeVoyageClient, ScriptedVoyageClient
 
 
-def _chunk(course, topic, source_file, chunk_index, text, section=None, page=None) -> Chunk:
+def _chunk(
+    course, topic, source_file, chunk_index, text, section=None, page=None
+) -> Chunk:
     return Chunk(
         text=text,
         metadata=ChunkMetadata(
@@ -34,7 +36,9 @@ def store(tmp_path: Path) -> NotesStore:
 
 class TestRetrieveWiring:
     def test_query_embedding_uses_query_input_type(self, store: NotesStore):
-        chunk = _chunk("dsa", "trees", "bst.md", 0, text="a binary search tree stores sorted data")
+        chunk = _chunk(
+            "dsa", "trees", "bst.md", 0, text="a binary search tree stores sorted data"
+        )
         client = FakeVoyageClient()
         embed_and_store([chunk], _embedder(client), store)
 
@@ -51,7 +55,13 @@ class TestRetrieveWiring:
     def test_course_filter_restricts_results(self, store: NotesStore):
         chunks = [
             _chunk("dsa", "trees", "bst.md", 0, text="binary search tree insertion"),
-            _chunk("operating_systems", "scheduling", "sched.md", 0, text="round robin scheduling"),
+            _chunk(
+                "operating_systems",
+                "scheduling",
+                "sched.md",
+                0,
+                text="round robin scheduling",
+            ),
         ]
         client = FakeVoyageClient()
         embed_and_store(chunks, _embedder(client), store)
@@ -71,7 +81,10 @@ class TestRetrieveWiring:
         assert results == []
 
     def test_n_results_limits_count(self, store: NotesStore):
-        chunks = [_chunk("dsa", "trees", "bst.md", i, text=f"chunk number {i}") for i in range(5)]
+        chunks = [
+            _chunk("dsa", "trees", "bst.md", i, text=f"chunk number {i}")
+            for i in range(5)
+        ]
         client = FakeVoyageClient()
         embed_and_store(chunks, _embedder(client), store)
 
@@ -104,7 +117,9 @@ class TestRetrieveWiring:
         assert result.page == 2
 
     def test_optional_fields_default_to_none_when_absent(self, store: NotesStore):
-        chunk = _chunk("operating_systems", "deadlocks", "notes.txt", 0, text="deadlock conditions")
+        chunk = _chunk(
+            "operating_systems", "deadlocks", "notes.txt", 0, text="deadlock conditions"
+        )
         client = FakeVoyageClient()
         embed_and_store([chunk], _embedder(client), store)
 
@@ -155,7 +170,10 @@ class TestCitation:
             section="Factory Method Pattern",
             page=1,
         )
-        assert result.citation() == "oop/design_patterns/factory.pdf > Factory Method Pattern (page 1)"
+        assert (
+            result.citation()
+            == "oop/design_patterns/factory.pdf > Factory Method Pattern (page 1)"
+        )
 
 
 class TestRankingCorrectness:
@@ -168,8 +186,12 @@ class TestRankingCorrectness:
         same_direction = _chunk(
             "dsa", "trees", "bst.md", 0, text="chunk pointing same direction as query"
         )
-        forty_five_deg = _chunk("dsa", "trees", "bst.md", 1, text="chunk at 45 degrees from query")
-        orthogonal = _chunk("dsa", "trees", "bst.md", 2, text="chunk orthogonal to query")
+        forty_five_deg = _chunk(
+            "dsa", "trees", "bst.md", 1, text="chunk at 45 degrees from query"
+        )
+        orthogonal = _chunk(
+            "dsa", "trees", "bst.md", 2, text="chunk orthogonal to query"
+        )
         query_text = "the query text"
 
         client = ScriptedVoyageClient(
@@ -215,7 +237,9 @@ class TestRankingCorrectness:
 
 
 class TestRetrieveWithDefaults:
-    def test_builds_real_embedder_and_store_then_delegates_to_retrieve(self, monkeypatch, store: NotesStore):
+    def test_builds_real_embedder_and_store_then_delegates_to_retrieve(
+        self, monkeypatch, store: NotesStore
+    ):
         """retrieve_with_defaults is a thin convenience wrapper around
         build_default_embedder() + NotesStore() + retrieve(). Rather than
         hitting the real Voyage API or the real on-disk store, monkeypatch
@@ -223,7 +247,9 @@ class TestRetrieveWithDefaults:
         wires their results into retrieve() with the right arguments.
         """
         fake_embedder = _embedder(FakeVoyageClient())
-        monkeypatch.setattr(retriever_module, "build_default_embedder", lambda: fake_embedder)
+        monkeypatch.setattr(
+            retriever_module, "build_default_embedder", lambda: fake_embedder
+        )
         monkeypatch.setattr(retriever_module, "NotesStore", lambda: store)
 
         chunk = _chunk("dsa", "trees", "bst.md", 0, text="binary search tree")

@@ -82,7 +82,9 @@ class ScriptedVoyageClient:
         )
         missing = [t for t in texts if t not in self.embeddings_by_text]
         if missing:
-            raise KeyError(f"ScriptedVoyageClient has no embedding scripted for: {missing}")
+            raise KeyError(
+                f"ScriptedVoyageClient has no embedding scripted for: {missing}"
+            )
 
         return FakeEmbedResult(
             embeddings=[self.embeddings_by_text[t] for t in texts],

@@ -31,7 +31,9 @@ def chat():
         return jsonify({"error": "message is required"}), 400
 
     conversation_store = current_app.config["CONVERSATION_STORE"]
-    conversation_id, conversation = conversation_store.get_or_create(payload.get("conversation_id"))
+    conversation_id, conversation = conversation_store.get_or_create(
+        payload.get("conversation_id")
+    )
 
     try:
         result = conversation.send(message)
@@ -40,7 +42,9 @@ def chat():
         # log server-side for debugging, return a clean, generic error.
         current_app.logger.exception("Agent turn failed")
         return (
-            jsonify({"error": "The agent failed to produce a response. Please try again."}),
+            jsonify(
+                {"error": "The agent failed to produce a response. Please try again."}
+            ),
             502,
         )
 

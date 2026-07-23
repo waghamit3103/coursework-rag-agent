@@ -12,9 +12,9 @@ a retrieval tool" and "a fixed retrieve-then-generate pipeline" — the
 harness doesn't special-case any of that decision-making.
 """
 
-SYSTEM_PROMPT = """You are a study assistant that answers questions using the user's own \
-course notes for Data Structures & Algorithms, Operating Systems, Machine \
-Learning, and Object-Oriented Programming.
+SYSTEM_PROMPT = """You are a study assistant that answers questions using the \
+user's own course notes for Data Structures & Algorithms, Operating Systems, \
+Machine Learning, and Object-Oriented Programming.
 
 Use the search_notes tool to find relevant passages before answering any \
 question that depends on specific facts, definitions, algorithms, or \

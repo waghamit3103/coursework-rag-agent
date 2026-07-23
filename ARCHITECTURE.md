@@ -521,6 +521,52 @@ image doesn't have `curl` installed, and adding it just for a healthcheck
 is an avoidable extra package when Python (already present) can make the
 same HTTP call directly.
 
+### GitHub Actions CI (Stage 8)
+
+**`ruff` was added specifically for this stage** — the project had no
+Python linter configured before now. Chose `ruff` over `flake8`/`pylint`
+for being fast, actively maintained, and able to do both linting (`ruff
+check`) and formatting (`ruff format`, a Black-compatible formatter) with
+one tool and one dependency, rather than wiring up two separately. Both
+were run against the existing codebase before locking either into CI:
+`ruff check` found exactly one real issue (an unused import); `ruff
+format --check` flagged 17 files that needed reformatting — reviewed the
+diff first (it was pure line-wrapping for lines over 88 characters, no
+semantic changes) before applying it, rather than reformatting blindly. A
+handful of long string literals (the system prompt, a couple of tool
+descriptions) needed manual wrapping afterward, since the formatter
+doesn't rewrap string *content*, only code structure around it.
+
+**Deliberately scoped ruff's rule selection to `E`/`F`** (the default
+set — undefined names, unused imports, obvious mistakes) rather than
+opting into the much larger catalog of style-opinion rule families ruff
+also offers (import sorting, docstring conventions, and so on). The goal
+for this project is catching real bugs in CI, not enforcing a broader
+style guide the rest of the codebase wasn't written against.
+
+**CI needs zero repository secrets** — confirmed this directly, not just
+assumed it, by temporarily hiding `backend/.env` entirely and re-running
+the full suite. Every test uses a fake Voyage or Anthropic client (see
+`tests/fakes.py`, `tests/fake_anthropic.py`); nothing in the suite makes
+a real network call. This matters beyond convenience: a workflow that
+needed real API keys would either have to skip full testing on pull
+requests from forks (which don't get access to repository secrets) or
+expose those keys to arbitrary PR code — this workflow has neither
+problem, for any contributor.
+
+**The workflow was run locally with `act` before ever being pushed**,
+rather than trusting the YAML would behave as intended on the first real
+push. `act` runs the actual workflow file in Docker containers matching
+GitHub's runners, which caught it working end-to-end (both jobs, actual
+lint/format/test/build steps) without needing a GitHub remote or a
+push/PR cycle to find out.
+
+**No `pytest-cov` version pin drift between local and CI** — the
+`--cov-fail-under=90` threshold lives in `backend/pytest.ini`, not
+duplicated as a CLI flag in the workflow, so local `pytest` and CI enforce
+the identical bar by construction rather than by two configs happening to
+agree.
+
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
@@ -530,6 +576,6 @@ same HTTP call directly.
 5. ✅ Flask API + React chat frontend
 6. ✅ pytest suite (chunking, retrieval, API) — 100% line coverage, enforced
 7. ✅ Docker + docker-compose
-8. GitHub Actions CI
+8. ✅ GitHub Actions CI
 9. Deployment + this doc's remaining sections
 10. (Stretch) Evaluation script + pgvector upgrade

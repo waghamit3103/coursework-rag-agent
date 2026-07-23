@@ -22,7 +22,9 @@ def create_app(client, embedder, store) -> Flask:
     CORS(app)
 
     app.config["NOTES_STORE"] = store
-    app.config["CONVERSATION_STORE"] = ConversationStore(client=client, embedder=embedder, store=store)
+    app.config["CONVERSATION_STORE"] = ConversationStore(
+        client=client, embedder=embedder, store=store
+    )
 
     app.register_blueprint(bp)
     return app

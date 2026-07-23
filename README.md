@@ -6,10 +6,10 @@ with grounded, cited answers. Claude decides when to search, evaluates whether
 results actually answer the question, and re-queries when they don't — this is
 an agent with a retrieval tool, not a fixed retrieve-then-generate pipeline.
 
-**Status:** Stage 7 of 10 complete (ingestion/chunking + embedding/vector
+**Status:** Stage 8 of 10 complete (ingestion/chunking + embedding/vector
 storage + retrieval + agent loop + Flask API/React frontend + hardened
-pytest suite + Docker/docker-compose). See [ARCHITECTURE.md](ARCHITECTURE.md)
-for the full design and the build plan.
+pytest suite + Docker/docker-compose + CI). See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the full design and the build plan.
 
 ## Project layout
 
@@ -70,7 +70,8 @@ frontend/
       LoadingIndicator.jsx          # "thinking" indicator while awaiting a response
   Dockerfile                # multi-stage: Vite build, then served by nginx
 docker-compose.yml          # backend + frontend together for local dev
-.github/workflows/           # CI (Stage 8)
+.github/workflows/
+  ci.yml                     # lint + test (backend), lint + build (frontend), on every push/PR
 ```
 
 ## Setup
@@ -244,6 +245,20 @@ full list and what each one turned out to be.
 [ARCHITECTURE.md](ARCHITECTURE.md#flask-api--react-frontend-stage-5) for
 why, and how the UI was verified instead.)
 
+## Lint
+
+```bash
+cd backend
+ruff check app scripts tests wsgi.py
+ruff format --check app scripts tests wsgi.py   # --check omitted: reformats in place
+
+cd ../frontend
+npm run lint
+```
+
+Both run automatically on every push and pull request —
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
 ## Design decisions
 
 See [ARCHITECTURE.md](ARCHITECTURE.md#design-decisions) for the full
@@ -308,7 +323,13 @@ reasoning — short version:
   it. Fixed by mounting only the derived subdirectories
   (`data/chroma/`, `data/processed/`) — see ARCHITECTURE.md for the full
   story.
+- **CI**: added `ruff` for backend linting/formatting (the project had
+  none before this stage); confirmed the entire pytest suite needs zero
+  repository secrets by hiding `.env` entirely and re-running it, which
+  is why the workflow works identically on a fork's pull request. The
+  workflow itself was run locally with [`act`](https://github.com/nektos/act)
+  before ever being pushed, rather than trusting the YAML on faith.
 
 ## Coming next
 
-- Stage 8+: CI, deployment, evaluation script.
+- Stage 9+: deployment, evaluation script.

@@ -35,7 +35,9 @@ def notes_root(tmp_path: Path) -> Path:
     shutil.copy(FIXTURES / "sample.pdf", os_dir / "scheduling.pdf")
 
     # A file that should be ignored (unsupported extension).
-    (os_dir / "notes.png").write_bytes(b"not a real image, just testing extension filtering")
+    (os_dir / "notes.png").write_bytes(
+        b"not a real image, just testing extension filtering"
+    )
 
     return root
 
@@ -112,7 +114,10 @@ def test_chunk_file_rejects_unsupported_extension(notes_root: Path):
 
 
 def test_chunk_pdf_blank_page_contributes_no_chunks(notes_root: Path, monkeypatch):
-    fake_pages = [(1, "   \n  "), (2, "Real content with enough words to form a chunk.")]
+    fake_pages = [
+        (1, "   \n  "),
+        (2, "Real content with enough words to form a chunk."),
+    ]
     monkeypatch.setattr(pipeline_module, "load_pdf_file", lambda path: fake_pages)
 
     path = notes_root / "operating_systems" / "scheduling" / "scheduling.pdf"
@@ -123,7 +128,9 @@ def test_chunk_pdf_blank_page_contributes_no_chunks(notes_root: Path, monkeypatc
     assert 2 in pages_seen
 
 
-def test_chunk_pdf_page_with_real_headings_uses_heading_chunking(notes_root: Path, monkeypatch):
+def test_chunk_pdf_page_with_real_headings_uses_heading_chunking(
+    notes_root: Path, monkeypatch
+):
     # Some course PDFs are exports of already-structured (e.g. Markdown)
     # notes and do contain real ATX-style headings in the extracted text —
     # this is the "has_real_headings" branch in _chunk_pdf_file, distinct

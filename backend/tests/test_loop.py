@@ -7,7 +7,13 @@ from app.embedding.pipeline import embed_and_store
 from app.embedding.store import NotesStore
 from app.ingestion.models import Chunk, ChunkMetadata
 from tests.conftest import make_embedder as _embedder
-from tests.fake_anthropic import FakeAnthropicClient, FakeMessage, FakeStopDetails, FakeTextBlock, FakeToolUseBlock
+from tests.fake_anthropic import (
+    FakeAnthropicClient,
+    FakeMessage,
+    FakeStopDetails,
+    FakeTextBlock,
+    FakeToolUseBlock,
+)
 from tests.fakes import FakeVoyageClient
 
 
@@ -29,7 +35,14 @@ def _chunk(course, topic, source_file, chunk_index, text, section=None) -> Chunk
 def store(tmp_path: Path) -> NotesStore:
     s = NotesStore(persist_dir=tmp_path / "chroma", collection_name="test_notes")
     chunks = [
-        _chunk("dsa", "trees", "bst.md", 0, text="binary search tree insertion", section="Insertion"),
+        _chunk(
+            "dsa",
+            "trees",
+            "bst.md",
+            0,
+            text="binary search tree insertion",
+            section="Insertion",
+        ),
         _chunk(
             "operating_systems",
             "scheduling",
@@ -49,12 +62,18 @@ class TestSingleSearchThenAnswer:
             responses=[
                 FakeMessage(
                     content=[
-                        FakeToolUseBlock(id="tu1", name="search_notes", input={"query": "bst"})
+                        FakeToolUseBlock(
+                            id="tu1", name="search_notes", input={"query": "bst"}
+                        )
                     ],
                     stop_reason="tool_use",
                 ),
                 FakeMessage(
-                    content=[FakeTextBlock(text="A BST is a binary tree with an ordering invariant.")],
+                    content=[
+                        FakeTextBlock(
+                            text="A BST is a binary tree with an ordering invariant."
+                        )
+                    ],
                     stop_reason="end_turn",
                 ),
             ]
@@ -75,7 +94,11 @@ class TestSingleSearchThenAnswer:
 
     def test_does_not_mutate_caller_message_list(self, store: NotesStore):
         client = FakeAnthropicClient(
-            responses=[FakeMessage(content=[FakeTextBlock(text="answer")], stop_reason="end_turn")]
+            responses=[
+                FakeMessage(
+                    content=[FakeTextBlock(text="answer")], stop_reason="end_turn"
+                )
+            ]
         )
         original_messages = [{"role": "user", "content": "hello"}]
         original_len = len(original_messages)
@@ -86,9 +109,18 @@ class TestSingleSearchThenAnswer:
 
     def test_system_prompt_and_tools_sent_on_every_call(self, store: NotesStore):
         client = FakeAnthropicClient(
-            responses=[FakeMessage(content=[FakeTextBlock(text="answer")], stop_reason="end_turn")]
+            responses=[
+                FakeMessage(
+                    content=[FakeTextBlock(text="answer")], stop_reason="end_turn"
+                )
+            ]
         )
-        run_agent_turn(client, [{"role": "user", "content": "hi"}], _embedder(FakeVoyageClient()), store)
+        run_agent_turn(
+            client,
+            [{"role": "user", "content": "hi"}],
+            _embedder(FakeVoyageClient()),
+            store,
+        )
 
         call = client.messages.calls[0]
         assert "search_notes" in call["system"]
@@ -96,7 +128,9 @@ class TestSingleSearchThenAnswer:
 
 
 class TestParallelToolCalls:
-    def test_multiple_tool_use_blocks_in_one_response_all_execute(self, store: NotesStore):
+    def test_multiple_tool_use_blocks_in_one_response_all_execute(
+        self, store: NotesStore
+    ):
         client = FakeAnthropicClient(
             responses=[
                 FakeMessage(
@@ -109,12 +143,18 @@ class TestParallelToolCalls:
                         FakeToolUseBlock(
                             id="tu2",
                             name="search_notes",
-                            input={"query": "scheduling", "course_filter": "operating_systems"},
+                            input={
+                                "query": "scheduling",
+                                "course_filter": "operating_systems",
+                            },
                         ),
                     ],
                     stop_reason="tool_use",
                 ),
-                FakeMessage(content=[FakeTextBlock(text="comparison answer")], stop_reason="end_turn"),
+                FakeMessage(
+                    content=[FakeTextBlock(text="comparison answer")],
+                    stop_reason="end_turn",
+                ),
             ]
         )
         messages = [{"role": "user", "content": "compare bst insertion to round robin"}]
@@ -148,16 +188,24 @@ class TestParallelToolCalls:
                 FakeMessage(
                     content=[
                         FakeTextBlock(text="Let me look that up..."),
-                        FakeToolUseBlock(id="tu1", name="search_notes", input={"query": "bst"}),
+                        FakeToolUseBlock(
+                            id="tu1", name="search_notes", input={"query": "bst"}
+                        ),
                     ],
                     stop_reason="tool_use",
                 ),
-                FakeMessage(content=[FakeTextBlock(text="real final answer")], stop_reason="end_turn"),
+                FakeMessage(
+                    content=[FakeTextBlock(text="real final answer")],
+                    stop_reason="end_turn",
+                ),
             ]
         )
 
         result = run_agent_turn(
-            client, [{"role": "user", "content": "question"}], _embedder(FakeVoyageClient()), store
+            client,
+            [{"role": "user", "content": "question"}],
+            _embedder(FakeVoyageClient()),
+            store,
         )
 
         assert result.text == "real final answer"
@@ -170,19 +218,26 @@ class TestMultiHopReQuery:
             responses=[
                 FakeMessage(
                     content=[
-                        FakeToolUseBlock(id="tu1", name="search_notes", input={"query": "vague term"})
+                        FakeToolUseBlock(
+                            id="tu1", name="search_notes", input={"query": "vague term"}
+                        )
                     ],
                     stop_reason="tool_use",
                 ),
                 FakeMessage(
                     content=[
                         FakeToolUseBlock(
-                            id="tu2", name="search_notes", input={"query": "refined term"}
+                            id="tu2",
+                            name="search_notes",
+                            input={"query": "refined term"},
                         )
                     ],
                     stop_reason="tool_use",
                 ),
-                FakeMessage(content=[FakeTextBlock(text="final grounded answer")], stop_reason="end_turn"),
+                FakeMessage(
+                    content=[FakeTextBlock(text="final grounded answer")],
+                    stop_reason="end_turn",
+                ),
             ]
         )
         messages = [{"role": "user", "content": "some hard question"}]
@@ -198,7 +253,9 @@ class TestMaxIterationsCap:
     def test_forces_a_final_no_tools_call_after_cap(self, store: NotesStore):
         # Always asks for another search — more than max_tool_iterations.
         endless_tool_use = FakeMessage(
-            content=[FakeToolUseBlock(id="tu", name="search_notes", input={"query": "x"})],
+            content=[
+                FakeToolUseBlock(id="tu", name="search_notes", input={"query": "x"})
+            ],
             stop_reason="tool_use",
         )
         forced_final = FakeMessage(
@@ -228,13 +285,18 @@ class TestRefusalHandling:
                 FakeMessage(
                     content=[],
                     stop_reason="refusal",
-                    stop_details=FakeStopDetails(category="cyber", explanation="I can't help with that."),
+                    stop_details=FakeStopDetails(
+                        category="cyber", explanation="I can't help with that."
+                    ),
                 )
             ]
         )
 
         result = run_agent_turn(
-            client, [{"role": "user", "content": "something disallowed"}], _embedder(FakeVoyageClient()), store
+            client,
+            [{"role": "user", "content": "something disallowed"}],
+            _embedder(FakeVoyageClient()),
+            store,
         )
 
         assert result.text == "I can't help with that."
@@ -242,19 +304,29 @@ class TestRefusalHandling:
 
 
 class TestUnknownToolDefensiveHandling:
-    def test_unrecognized_tool_name_reports_error_and_continues(self, store: NotesStore):
+    def test_unrecognized_tool_name_reports_error_and_continues(
+        self, store: NotesStore
+    ):
         client = FakeAnthropicClient(
             responses=[
                 FakeMessage(
-                    content=[FakeToolUseBlock(id="tu1", name="some_other_tool", input={})],
+                    content=[
+                        FakeToolUseBlock(id="tu1", name="some_other_tool", input={})
+                    ],
                     stop_reason="tool_use",
                 ),
-                FakeMessage(content=[FakeTextBlock(text="recovered answer")], stop_reason="end_turn"),
+                FakeMessage(
+                    content=[FakeTextBlock(text="recovered answer")],
+                    stop_reason="end_turn",
+                ),
             ]
         )
 
         result = run_agent_turn(
-            client, [{"role": "user", "content": "question"}], _embedder(FakeVoyageClient()), store
+            client,
+            [{"role": "user", "content": "question"}],
+            _embedder(FakeVoyageClient()),
+            store,
         )
 
         assert result.text == "recovered answer"
@@ -270,25 +342,38 @@ class TestSourceDeduplication:
             responses=[
                 FakeMessage(
                     content=[
-                        FakeToolUseBlock(id="tu1", name="search_notes", input={"query": "bst"})
+                        FakeToolUseBlock(
+                            id="tu1", name="search_notes", input={"query": "bst"}
+                        )
                     ],
                     stop_reason="tool_use",
                 ),
                 FakeMessage(
                     content=[
-                        FakeToolUseBlock(id="tu2", name="search_notes", input={"query": "binary search tree"})
+                        FakeToolUseBlock(
+                            id="tu2",
+                            name="search_notes",
+                            input={"query": "binary search tree"},
+                        )
                     ],
                     stop_reason="tool_use",
                 ),
-                FakeMessage(content=[FakeTextBlock(text="answer")], stop_reason="end_turn"),
+                FakeMessage(
+                    content=[FakeTextBlock(text="answer")], stop_reason="end_turn"
+                ),
             ]
         )
 
         result = run_agent_turn(
-            client, [{"role": "user", "content": "q"}], _embedder(FakeVoyageClient()), store
+            client,
+            [{"role": "user", "content": "q"}],
+            _embedder(FakeVoyageClient()),
+            store,
         )
 
         # Both searches overlap the same 2-chunk store, so sources should
         # be deduped to at most 2 unique chunks despite 2 searches run.
-        keys = [(s.course, s.topic, s.source_file, s.chunk_index) for s in result.sources]
+        keys = [
+            (s.course, s.topic, s.source_file, s.chunk_index) for s in result.sources
+        ]
         assert len(keys) == len(set(keys))
