@@ -213,13 +213,69 @@ third-party network call is a real, common failure mode (rate limits,
 transient 5xxs) worth handling explicitly rather than letting the whole
 ingestion run die on the first blip. `VoyageEmbedder` takes an injectable
 `sleep_fn` specifically so this is unit-testable without actually sleeping
-in the test suite (see `tests/test_voyage_client.py`).
+in the test suite (see `tests/test_voyage_client.py`). Note this is a
+*retry* budget (a few seconds), not a rate-limit-window budget (up to a
+minute) — see the Stage 3 note below on a real rate-limit encounter during
+manual testing, which this retry logic is not intended to paper over.
+
+### Retrieval (Stage 3)
+
+**ChromaDB's collection distance space is set explicitly to cosine, not
+left at the default.** I checked empirically rather than assumed: with no
+`hnsw:space` specified, Chroma's default is squared L2, confirmed by
+querying hand-constructed vectors and inspecting the returned distances.
+Cosine similarity is the more standard, more interpretable choice for
+embedding search — it measures direction rather than magnitude, and it
+converts into a relevance score with a clean, exact formula:
+`cosine_distance = 1 - cosine_similarity`, also verified empirically
+against hand-computed vectors before relying on it in
+`_parse_chroma_result`. The space is fixed at collection-creation time,
+which is why `NotesStore` sets it explicitly rather than leaving it
+implicit — an implicit default that happened to be "wrong" (squared L2,
+not cosine) would have been a silent, hard-to-notice quality bug.
+
+**`retrieve()` takes an injected `VoyageEmbedder` and `NotesStore`, mirroring
+the Stage 2 dependency-injection pattern**, specifically so retrieval
+*ranking* — not just retrieval *plumbing* — can be unit-tested without a
+network call. `tests/fakes.py` has two fake Voyage clients for two
+different testing needs: `FakeVoyageClient` (automatic length-based
+embeddings) is fine for testing batching/retry mechanics, but it produces
+1-D embeddings where cosine similarity between any two same-sign vectors
+is trivially 1.0 — useless for testing whether ranking is actually
+correct. `ScriptedVoyageClient` lets a test specify an exact embedding per
+text, so `test_retriever.py` can construct chunks with deliberate,
+hand-computed angular relationships to a query vector and assert the
+resulting ranking and scores match real cosine-similarity math — a
+genuine correctness test, not a "did it run" smoke test.
+
+**A hard rate-limit lesson surfaced again during manual verification, and
+it's worth recording rather than glossing over:** running three real
+retrieval queries back-to-back against the same (payment-method-free)
+Voyage account hit the same 3-requests/minute limit that Stage 2 hit
+during ingestion. This is not a bug in `retrieve()` — each query
+legitimately needs exactly one embedding call — it's a reminder that this
+project's actual constraint at this account tier is *requests per minute
+across the whole system*, not per-endpoint. It's why Stage 4's agent loop
+(which can issue multiple `search_notes` calls per turn for multi-hop
+questions) will need to be mindful of the same limit, and why a
+production deployment on a paid tier removes this constraint rather than
+needing a code change.
+
+**`RetrievedChunk.citation()` formats `section` and `page` conditionally**
+(both, either, or neither may be present, depending on chunking_method and
+source format) rather than assuming a fixed template — a `.txt` chunk has
+neither, a Markdown chunk typically has a section and no page, a PDF
+chunk may have both. Keeping `section`/`page` as separate optional fields
+on the dataclass (matching `ChunkMetadata`) rather than pre-formatting a
+single citation string at retrieval time means a future caller (the API
+response shape in Stage 5, say) can render them differently without
+re-parsing anything.
 
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
 2. ✅ Embedding (Voyage AI `voyage-3-large`) + ChromaDB storage
-3. Retrieval logic (standalone, testable without the agent loop)
+3. ✅ Retrieval logic (standalone, testable without the agent loop)
 4. Agent loop with Claude tool use (`search_notes`)
 5. Flask API + React chat frontend
 6. pytest suite (chunking, retrieval, API)

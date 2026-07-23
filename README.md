@@ -6,9 +6,9 @@ with grounded, cited answers. Claude decides when to search, evaluates whether
 results actually answer the question, and re-queries when they don't — this is
 an agent with a retrieval tool, not a fixed retrieve-then-generate pipeline.
 
-**Status:** Stage 2 of 10 complete (ingestion/chunking + embedding/vector
-storage). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and the
-build plan.
+**Status:** Stage 3 of 10 complete (ingestion/chunking + embedding/vector
+storage + retrieval). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full
+design and the build plan.
 
 ## Project layout
 
@@ -25,14 +25,17 @@ backend/
       voyage_client.py       # VoyageEmbedder: batching + retry over the Voyage API
       store.py                # NotesStore: ChromaDB persistence, course-filterable query
       pipeline.py              # embed_and_store(): ties embedder + store together
+    retrieval/
+      retriever.py            # retrieve(query, course_filter?): embed + search + rank
   scripts/
     run_ingestion.py        # CLI: chunk everything, write data/processed/chunks.jsonl
     run_embedding.py         # CLI: embed chunks.jsonl, persist to data/chroma/
   tests/
     fixtures/                # sample .md / .txt / .pdf used by the test suite
-    fakes.py                  # FakeVoyageClient (no network calls in tests)
+    fakes.py                  # FakeVoyageClient + ScriptedVoyageClient (no network in tests)
     test_chunking.py / test_loaders.py / test_pipeline.py / test_models.py
     test_voyage_client.py / test_store.py / test_embedding_pipeline.py
+    test_retriever.py
   data/
     raw_notes/<course>/<topic>/   # sample notes ship here (see below)
     processed/                     # chunks.jsonl output (gitignored)
@@ -110,6 +113,28 @@ Safe to re-run: each file's existing chunks are deleted before its current
 chunks are re-inserted, so re-running after editing a note replaces that
 note's vectors rather than duplicating or orphaning them.
 
+## Try retrieval
+
+Requires embeddings to already exist (see "Run embedding" above).
+
+```bash
+cd backend
+python -c "
+from app.retrieval.retriever import retrieve_with_defaults
+for r in retrieve_with_defaults('why does an unbalanced BST hurt performance?', n_results=3):
+    print(f'{r.score:.4f}  {r.citation()}')
+"
+```
+
+`retrieve(query, embedder, store, course_filter=None, n_results=5)` is the
+core function — it embeds the query (`input_type="query"`), searches
+ChromaDB (optionally scoped to one course via `course_filter`), and returns
+`RetrievedChunk` objects with a cosine-similarity `score` and a
+`.citation()` method for display. `retrieve_with_defaults(...)` above is
+just a convenience wrapper that builds the real embedder/store for you —
+Stage 4's agent tool and Stage 5's API will construct those once and call
+`retrieve()` directly instead.
+
 ## Run tests
 
 ```bash
@@ -145,10 +170,15 @@ reasoning — short version:
   Voyage's reduced rate limit for accounts without a payment method on
   file, which is documented in ARCHITECTURE.md as a real lesson, not a
   hypothetical one.
+- **Retrieval**: ChromaDB's collection is explicitly configured for cosine
+  distance (confirmed the default is actually squared L2, not cosine, by
+  testing hand-constructed vectors) and converted to an interpretable
+  cosine-similarity score. Ranking correctness is unit-tested with
+  hand-computed vector geometry (a `ScriptedVoyageClient` test double), not
+  just "did it return something."
 
 ## Coming next
 
-- Stage 3: standalone retrieval (testable without the agent loop).
 - Stage 4: agent loop — Claude decides when to call `search_notes`, evaluates
   results, and re-queries for multi-hop questions.
 - Stage 5+: Flask API, React chat UI, full pytest suite, Docker, CI,

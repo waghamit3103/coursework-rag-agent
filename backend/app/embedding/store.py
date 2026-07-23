@@ -21,6 +21,18 @@ overwrite or remove them. Clearing every existing chunk for a source file
 before inserting its fresh set sidesteps that entirely: the store always
 reflects exactly the current chunking of a file, with no diffing logic
 required.
+
+Design decision — explicit cosine distance space:
+ChromaDB's default HNSW space (when not specified at collection creation)
+is squared L2 distance, not cosine — confirmed empirically, not assumed.
+Cosine similarity is the standard, more interpretable choice for embedding
+search (it measures direction, not magnitude, which matters if embedding
+norms vary at all), and it converts cleanly into a 0-1-ish relevance score
+for citations and the UI: cosine_distance = 1 - cosine_similarity exactly,
+verified against hand-computed vectors before relying on it. The space is
+set once per collection at creation time via `metadata={"hnsw:space":
+"cosine"}` and can't be changed after the fact without rebuilding the
+collection — worth knowing if this ever needs to change later.
 """
 
 from pathlib import Path
@@ -40,7 +52,9 @@ class NotesStore:
     ):
         persist_dir.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(persist_dir))
-        self._collection = self._client.get_or_create_collection(collection_name)
+        self._collection = self._client.get_or_create_collection(
+            collection_name, metadata={"hnsw:space": "cosine"}
+        )
 
     def upsert_chunks(self, chunks: List[Chunk], embeddings: List[List[float]]) -> None:
         if len(chunks) != len(embeddings):
