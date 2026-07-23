@@ -1,0 +1,17 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Derived/regenerable data — the entrypoint bootstraps these fresh if
+# missing. data/raw_notes/ is NOT excluded here: it needs to ship in the
+# image for that bootstrap to have anything to chunk.
+data/chroma/
+data/processed/
+
+.env
+.env.example
+.git

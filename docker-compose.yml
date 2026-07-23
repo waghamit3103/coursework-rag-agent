@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      # Mount only the derived/regenerable subdirectories, NOT the whole
+      # data/ tree — data/raw_notes/ is baked into the image at build
+      # time (see backend/Dockerfile), and a volume mounted at the parent
+      # data/ directory would shadow it entirely, hiding the very notes
+      # the entrypoint's bootstrap needs to chunk (found by testing this
+      # exact scenario: an empty volume at /app/data made the container
+      # report "No raw notes directory found" despite the image having
+      # them). Mounting the two derived subdirectories individually reuses
+      # whatever's already been ingested/embedded on the host (skipping
+      # redundant Voyage spend on every `docker-compose up`) without ever
+      # touching what's baked into the image.
+      - ./backend/data/chroma:/app/data/chroma
+      - ./backend/data/processed:/app/data/processed
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The browser (not the frontend container) talks to the backend,
+        # so this must be a URL the host machine can resolve — the
+        # backend's published host port, not Docker's internal service
+        # name/network.
+        VITE_API_BASE_URL: http://localhost:5000
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend

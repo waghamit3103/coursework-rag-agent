@@ -6,10 +6,10 @@ with grounded, cited answers. Claude decides when to search, evaluates whether
 results actually answer the question, and re-queries when they don't — this is
 an agent with a retrieval tool, not a fixed retrieve-then-generate pipeline.
 
-**Status:** Stage 6 of 10 complete (ingestion/chunking + embedding/vector
+**Status:** Stage 7 of 10 complete (ingestion/chunking + embedding/vector
 storage + retrieval + agent loop + Flask API/React frontend + hardened
-pytest suite). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design
-and the build plan.
+pytest suite + Docker/docker-compose). See [ARCHITECTURE.md](ARCHITECTURE.md)
+for the full design and the build plan.
 
 ## Project layout
 
@@ -56,6 +56,9 @@ backend/
     raw_notes/<course>/<topic>/   # sample notes ship here (see below)
     processed/                     # chunks.jsonl output (gitignored)
     chroma/                         # ChromaDB persistence (gitignored)
+  Dockerfile                 # multi-stage: build deps, then a slim runtime image
+  docker-entrypoint.sh         # auto-bootstraps the vector store on first run
+  wsgi.py                       # production entry point (gunicorn wsgi:app)
 frontend/
   src/
     api.js                   # fetch wrapper for the Flask API
@@ -65,6 +68,8 @@ frontend/
       MessageBubble.jsx           # one message (user or assistant)
       SourceList.jsx               # citations + scores under an assistant message
       LoadingIndicator.jsx          # "thinking" indicator while awaiting a response
+  Dockerfile                # multi-stage: Vite build, then served by nginx
+docker-compose.yml          # backend + frontend together for local dev
 .github/workflows/           # CI (Stage 8)
 ```
 
@@ -200,6 +205,24 @@ routing, CORS, session handling, the React UI — can be exercised end to
 end before the real key exists. Set the key and restart for real,
 grounded answers.
 
+## Run with Docker
+
+Requires both API keys in `backend/.env` (this path — unlike
+`run_api.py` — fails loudly rather than falling back to a canned agent;
+see [ARCHITECTURE.md](ARCHITECTURE.md#docker--docker-compose-stage-7)).
+
+```bash
+docker compose up --build
+# backend:  http://localhost:5000
+# frontend: http://localhost:5173
+```
+
+First run with no existing `backend/data/chroma/` bootstraps
+automatically — the backend container chunks and embeds
+`data/raw_notes/` (baked into the image) before starting the server.
+Subsequent runs skip straight to serving, reusing whatever's already been
+embedded on the host. Backend health: `curl http://localhost:5000/api/health`.
+
 ## Run tests
 
 ```bash
@@ -275,7 +298,17 @@ reasoning — short version:
   single-instance deployment, not an oversight. No manual course-filter
   control in the UI: the agent deciding when to use it autonomously is
   the point of the project.
+- **Docker**: multi-stage builds for both images (compiler/Node toolchain
+  never ships in the final image). Production (`wsgi.py`) fails loudly on
+  a missing key; the local dev script falls back to a canned agent — a
+  deliberate difference, not an inconsistency. Found a real bug by
+  actually testing the fresh-bootstrap path with an empty mounted
+  directory: mounting a volume at the whole `data/` directory shadows
+  `data/raw_notes/` baked into the image at build time, not just overlays
+  it. Fixed by mounting only the derived subdirectories
+  (`data/chroma/`, `data/processed/`) — see ARCHITECTURE.md for the full
+  story.
 
 ## Coming next
 
-- Stage 7+: Docker, CI, deployment, evaluation script.
+- Stage 8+: CI, deployment, evaluation script.

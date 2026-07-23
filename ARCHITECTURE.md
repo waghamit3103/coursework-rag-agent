@@ -468,6 +468,59 @@ problem when it's accidental (the same thing, written twice, that could
 silently drift); it's not automatically a problem just because two things
 look similar.
 
+### Docker + docker-compose (Stage 7)
+
+**Both Dockerfiles are multi-stage** — a builder stage with compilers
+(backend: `gcc`/`g++`, needed since some of ChromaDB's dependencies build
+native extensions on platforms without a prebuilt wheel; frontend: the
+full Node toolchain) and a slim final stage that carries only what's
+needed to actually run — installed Python packages via `pip install
+--user` copied wholesale, or the static `dist/` output served by nginx.
+Neither final image contains a compiler or `node_modules`.
+
+**`wsgi.py` (production) fails loudly on a missing key; `scripts/run_api.py`
+(local dev) falls back to a canned agent.** These are deliberately
+different behaviors for the same underlying `create_app`, not an
+inconsistency: a production process should refuse to start rather than
+silently serve fake answers, but a dev script whose whole purpose is
+letting you exercise the stack before you have a key should degrade
+gracefully instead. Verified directly: running the built image without
+`ANTHROPIC_API_KEY` set correctly crashes at import time with a clear
+`RuntimeError`, not a confusing later failure.
+
+**The entrypoint auto-bootstraps the vector store on first run** —
+`docker-entrypoint.sh` checks whether the ChromaDB collection is already
+populated (a cheap local check, no API calls) and, only if it's empty,
+runs ingestion then embedding before starting gunicorn. This makes `docker
+compose up` work from a clean checkout without a separate manual
+ingestion step, while never re-spending Voyage tokens on a container
+that's just restarting with data already in place.
+
+**A real bug, found by testing the fresh-bootstrap path deliberately, not
+assumed to work:** the first version of `docker-compose.yml` mounted a
+single volume at `/app/data` for local-dev convenience (reuse whatever's
+already embedded on the host). Testing what happens with an *empty*
+mounted directory — simulating a genuinely fresh deployment — showed the
+entrypoint reporting "No raw notes directory found," even though
+`data/raw_notes/` is `COPY`'d into the image at build time. The volume
+mount doesn't overlay the image's filesystem at that path — it replaces
+the entire directory, image contents and all, which silently hid the
+baked-in notes behind an empty host directory. The fix is to mount only
+the two subdirectories that are actually meant to be persisted/reused —
+`data/chroma/` and `data/processed/` — leaving `data/raw_notes/` alone so
+the image's own copy stays visible. Confirmed the fix by re-running the
+exact same empty-directory scenario: ingestion found the notes, embedding
+ran (a real Voyage call — same 32 chunks, same 4382 tokens as every prior
+run), gunicorn started, and `docker inspect`'s health status read
+`healthy`. This is also the reason `data/chroma/` isn't just one bind
+mount for the whole `data/` tree in any future production volume
+configuration (Stage 9) — the same shadowing would recur.
+
+**Healthcheck uses Python's own `urllib`, not `curl`** — the slim final
+image doesn't have `curl` installed, and adding it just for a healthcheck
+is an avoidable extra package when Python (already present) can make the
+same HTTP call directly.
+
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
@@ -476,7 +529,7 @@ look similar.
 4. ✅ Agent loop with Claude tool use (`search_notes`)
 5. ✅ Flask API + React chat frontend
 6. ✅ pytest suite (chunking, retrieval, API) — 100% line coverage, enforced
-7. Docker + docker-compose
+7. ✅ Docker + docker-compose
 8. GitHub Actions CI
 9. Deployment + this doc's remaining sections
 10. (Stretch) Evaluation script + pgvector upgrade
