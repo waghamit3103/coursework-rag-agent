@@ -1,0 +1,9 @@
+Process scheduling is the activity of the operating system that decides which
+process runs on the CPU at any given time. Common scheduling algorithms
+include First-Come First-Served, Shortest Job First, Round Robin, and
+Priority Scheduling. Each algorithm makes different trade-offs between
+throughput, latency, and fairness. Round Robin, for example, gives every
+process a fixed time quantum and cycles through the ready queue, which
+improves fairness and responsiveness for interactive workloads at the cost
+of higher average waiting time compared to Shortest Job First when job
+lengths vary widely.

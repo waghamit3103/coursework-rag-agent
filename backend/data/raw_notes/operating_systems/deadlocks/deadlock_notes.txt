@@ -1,0 +1,61 @@
+A deadlock occurs when a set of processes are each waiting for a resource
+held by another process in the same set, so that none of them can ever make
+progress. Four conditions must all hold simultaneously for a deadlock to be
+possible: mutual exclusion, meaning at least one resource must be held in a
+non-shareable mode so that only one process can use it at a time; hold and
+wait, meaning a process holding at least one resource is waiting to acquire
+additional resources held by other processes; no preemption, meaning
+resources cannot be forcibly taken away from a process, they can only be
+released voluntarily; and circular wait, meaning there exists a set of
+waiting processes P0, P1, ..., Pn such that P0 is waiting for a resource held
+by P1, P1 is waiting for a resource held by P2, and so on until Pn is waiting
+for a resource held by P0, closing the cycle.
+
+There are three general strategies for dealing with deadlock. The first is
+prevention, which works by denying at least one of the four necessary
+conditions so that deadlock becomes structurally impossible. Denying mutual
+exclusion is often impractical since some resources are inherently
+non-shareable, like a printer. Denying hold and wait can be done by requiring
+a process to request all the resources it will ever need up front before it
+starts running, but this hurts resource utilization badly since resources
+sit idle waiting to be requested together and processes must know their full
+resource needs in advance, which is often not realistic. Denying no
+preemption means allowing the operating system to forcibly take resources
+away from a process and give them to another, which works for resources
+whose state can be saved and restored, like CPU registers, but not for
+resources like a printer mid-job. Denying circular wait is usually done by
+imposing a strict, total ordering on all resource types and requiring every
+process to request resources in increasing order according to that ordering,
+which makes a cycle in the wait-for graph provably impossible.
+
+The second strategy is avoidance, exemplified by the Banker's Algorithm.
+Rather than statically denying one of the four conditions, avoidance
+dynamically examines each resource allocation request before granting it and
+only grants requests that leave the system in a safe state, meaning there
+still exists some ordering in which all processes could finish even in the
+worst case of every process eventually requesting its declared maximum need.
+This requires processes to declare their maximum possible resource need in
+advance, which is a strong and often unrealistic assumption in real systems,
+but it is a foundational algorithm for reasoning about deadlock avoidance
+formally and shows up frequently in exam questions asking you to trace
+through a safety check by hand.
+
+The third strategy is detection and recovery: allow deadlocks to happen, but
+periodically run a detection algorithm, essentially looking for a cycle in a
+resource allocation graph or a wait-for graph, and when one is found, recover
+by either aborting one or more processes in the cycle or by preempting
+resources from some of them until the cycle is broken. This trades the
+overhead of prevention or avoidance for periodic detection overhead plus the
+cost of recovery, which is often acceptable in practice since deadlocks tend
+to be rare events in well-designed systems, even without explicit prevention.
+
+Many real systems, including most general-purpose operating systems, simply
+ignore the problem entirely, on the theory that deadlocks are rare enough in
+practice that the overhead of prevention, avoidance, or even detection is not
+worth paying, and a system-wide reboot is an acceptable, if crude, recovery
+mechanism when a deadlock does eventually occur. This is sometimes called the
+ostrich algorithm, and it is in fact the strategy used by both Windows and
+most UNIX-derived operating systems for general-purpose deadlock handling,
+even though those same systems do implement specific, targeted deadlock
+avoidance or detection for particular subsystems where deadlock is a much
+more serious concern, such as within the database layer of a system service.

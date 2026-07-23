@@ -1,0 +1,4 @@
+# Core dependencies for Stage 1 (ingestion/chunking). Later stages append to
+# this file rather than replacing it, so `pip install -r requirements.txt`
+# always gives a working environment for wherever the project currently is.
+pypdf==5.1.0
