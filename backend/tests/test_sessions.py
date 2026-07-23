@@ -4,13 +4,9 @@ import pytest
 
 from app.api.sessions import ConversationStore
 from app.embedding.store import NotesStore
-from app.embedding.voyage_client import VoyageEmbedder
+from tests.conftest import make_embedder as _embedder
 from tests.fake_anthropic import FakeAnthropicClient
 from tests.fakes import FakeVoyageClient
-
-
-def _embedder(client) -> VoyageEmbedder:
-    return VoyageEmbedder(client=client, batch_size=128, max_retries=1, retry_backoff_seconds=0.0)
 
 
 @pytest.fixture

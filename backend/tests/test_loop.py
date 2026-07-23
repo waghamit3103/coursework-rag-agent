@@ -5,8 +5,8 @@ import pytest
 from app.agent.loop import run_agent_turn
 from app.embedding.pipeline import embed_and_store
 from app.embedding.store import NotesStore
-from app.embedding.voyage_client import VoyageEmbedder
 from app.ingestion.models import Chunk, ChunkMetadata
+from tests.conftest import make_embedder as _embedder
 from tests.fake_anthropic import FakeAnthropicClient, FakeMessage, FakeStopDetails, FakeTextBlock, FakeToolUseBlock
 from tests.fakes import FakeVoyageClient
 
@@ -23,10 +23,6 @@ def _chunk(course, topic, source_file, chunk_index, text, section=None) -> Chunk
             section=section,
         ),
     )
-
-
-def _embedder(client) -> VoyageEmbedder:
-    return VoyageEmbedder(client=client, batch_size=128, max_retries=1, retry_backoff_seconds=0.0)
 
 
 @pytest.fixture
@@ -137,6 +133,35 @@ class TestParallelToolCalls:
         assert len(tool_result_turn["content"]) == 2
         tool_use_ids = {block["tool_use_id"] for block in tool_result_turn["content"]}
         assert tool_use_ids == {"tu1", "tu2"}
+
+    def test_narration_text_alongside_a_tool_call_is_skipped_not_treated_as_final(
+        self, store: NotesStore
+    ):
+        """Claude sometimes narrates ("Let me look that up...") in the
+        same response as a tool_use block. stop_reason is still
+        "tool_use", so that narration must NOT be returned as the final
+        answer — only the text block in the response that actually stops
+        with a non-tool_use reason counts as the answer.
+        """
+        client = FakeAnthropicClient(
+            responses=[
+                FakeMessage(
+                    content=[
+                        FakeTextBlock(text="Let me look that up..."),
+                        FakeToolUseBlock(id="tu1", name="search_notes", input={"query": "bst"}),
+                    ],
+                    stop_reason="tool_use",
+                ),
+                FakeMessage(content=[FakeTextBlock(text="real final answer")], stop_reason="end_turn"),
+            ]
+        )
+
+        result = run_agent_turn(
+            client, [{"role": "user", "content": "question"}], _embedder(FakeVoyageClient()), store
+        )
+
+        assert result.text == "real final answer"
+        assert result.num_tool_calls == 1
 
 
 class TestMultiHopReQuery:

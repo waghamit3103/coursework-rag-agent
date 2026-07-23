@@ -5,9 +5,10 @@ import pytest
 
 from app.embedding.pipeline import embed_and_store
 from app.embedding.store import NotesStore
-from app.embedding.voyage_client import VoyageEmbedder
 from app.ingestion.models import Chunk, ChunkMetadata
-from app.retrieval.retriever import RetrievedChunk, retrieve
+import app.retrieval.retriever as retriever_module
+from app.retrieval.retriever import RetrievedChunk, retrieve, retrieve_with_defaults
+from tests.conftest import make_embedder as _embedder
 from tests.fakes import FakeVoyageClient, ScriptedVoyageClient
 
 
@@ -24,10 +25,6 @@ def _chunk(course, topic, source_file, chunk_index, text, section=None, page=Non
             page=page,
         ),
     )
-
-
-def _embedder(client) -> VoyageEmbedder:
-    return VoyageEmbedder(client=client, batch_size=128, max_retries=1, retry_backoff_seconds=0.0)
 
 
 @pytest.fixture
@@ -215,3 +212,24 @@ class TestRankingCorrectness:
         assert results[0].score == pytest.approx(1.0)
         assert results[1].chunk_index == 1
         assert results[1].score == pytest.approx(-1.0)
+
+
+class TestRetrieveWithDefaults:
+    def test_builds_real_embedder_and_store_then_delegates_to_retrieve(self, monkeypatch, store: NotesStore):
+        """retrieve_with_defaults is a thin convenience wrapper around
+        build_default_embedder() + NotesStore() + retrieve(). Rather than
+        hitting the real Voyage API or the real on-disk store, monkeypatch
+        those two factories at the module level and verify the wrapper
+        wires their results into retrieve() with the right arguments.
+        """
+        fake_embedder = _embedder(FakeVoyageClient())
+        monkeypatch.setattr(retriever_module, "build_default_embedder", lambda: fake_embedder)
+        monkeypatch.setattr(retriever_module, "NotesStore", lambda: store)
+
+        chunk = _chunk("dsa", "trees", "bst.md", 0, text="binary search tree")
+        embed_and_store([chunk], fake_embedder, store)
+
+        results = retrieve_with_defaults("bst", course_filter="dsa", n_results=2)
+
+        assert len(results) == 1
+        assert results[0].course == "dsa"

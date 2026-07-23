@@ -4,6 +4,8 @@ __pycache__/
 backend/venv/
 backend/.pytest_cache/
 *.egg-info/
+.coverage
+htmlcov/
 
 # data/raw_notes/ IS tracked — it currently holds synthetic sample notes
 # committed as demo/portfolio data (see README). If you swap in private

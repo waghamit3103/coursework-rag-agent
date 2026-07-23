@@ -4,11 +4,14 @@ from pathlib import Path
 
 import pytest
 
+import app.ingestion.pipeline as pipeline_module
+from app.ingestion.models import Chunk
 from app.ingestion.pipeline import (
     chunk_file,
     course_topic_from_path,
     discover_source_files,
     ingest_all,
+    read_chunks_jsonl,
     write_chunks_jsonl,
 )
 
@@ -98,6 +101,51 @@ def test_chunk_file_pdf_records_page_numbers(notes_root: Path):
         assert c.metadata.source_file == "scheduling.pdf"
 
 
+def test_chunk_file_rejects_unsupported_extension(notes_root: Path):
+    # notes.png sits inside a valid course/topic dir (only its extension
+    # is the problem) — chunk_file's own guard, independent of
+    # discover_source_files already filtering it out earlier in the
+    # pipeline.
+    path = notes_root / "operating_systems" / "scheduling" / "notes.png"
+    with pytest.raises(ValueError, match="Unsupported file extension"):
+        chunk_file(path, notes_root)
+
+
+def test_chunk_pdf_blank_page_contributes_no_chunks(notes_root: Path, monkeypatch):
+    fake_pages = [(1, "   \n  "), (2, "Real content with enough words to form a chunk.")]
+    monkeypatch.setattr(pipeline_module, "load_pdf_file", lambda path: fake_pages)
+
+    path = notes_root / "operating_systems" / "scheduling" / "scheduling.pdf"
+    chunks = chunk_file(path, notes_root)
+
+    pages_seen = {c.metadata.page for c in chunks}
+    assert 1 not in pages_seen
+    assert 2 in pages_seen
+
+
+def test_chunk_pdf_page_with_real_headings_uses_heading_chunking(notes_root: Path, monkeypatch):
+    # Some course PDFs are exports of already-structured (e.g. Markdown)
+    # notes and do contain real ATX-style headings in the extracted text —
+    # this is the "has_real_headings" branch in _chunk_pdf_file, distinct
+    # from the fixed-size fallback the other PDF tests exercise.
+    fake_pages = [
+        (
+            1,
+            "# Factory Method\n\nDefines an interface for creating an "
+            "object, letting subclasses decide which class to instantiate.",
+        )
+    ]
+    monkeypatch.setattr(pipeline_module, "load_pdf_file", lambda path: fake_pages)
+
+    path = notes_root / "operating_systems" / "scheduling" / "scheduling.pdf"
+    chunks = chunk_file(path, notes_root)
+
+    assert len(chunks) == 1
+    assert chunks[0].metadata.chunking_method == "heading"
+    assert chunks[0].metadata.section == "Factory Method"
+    assert chunks[0].metadata.page == 1
+
+
 def test_ingest_all_covers_every_discovered_file(notes_root: Path):
     chunks = ingest_all(notes_root)
     source_files = {c.metadata.source_file for c in chunks}
@@ -117,3 +165,15 @@ def test_write_chunks_jsonl_round_trips(notes_root: Path, tmp_path: Path):
     assert "text" in first_record
     assert "metadata" in first_record
     assert "course" in first_record["metadata"]
+
+
+def test_read_chunks_jsonl_round_trips_with_write(notes_root: Path, tmp_path: Path):
+    original_chunks = ingest_all(notes_root)
+    out_path = tmp_path / "processed" / "chunks.jsonl"
+    write_chunks_jsonl(original_chunks, out_path)
+
+    read_back = read_chunks_jsonl(out_path)
+
+    assert len(read_back) == len(original_chunks)
+    assert all(isinstance(c, Chunk) for c in read_back)
+    assert [c.to_dict() for c in read_back] == [c.to_dict() for c in original_chunks]

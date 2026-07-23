@@ -5,8 +5,8 @@ import pytest
 from app.agent.tools import build_search_notes_tool, execute_search_notes
 from app.embedding.pipeline import embed_and_store
 from app.embedding.store import NotesStore
-from app.embedding.voyage_client import VoyageEmbedder
 from app.ingestion.models import Chunk, ChunkMetadata
+from tests.conftest import make_embedder as _embedder
 from tests.fakes import FakeVoyageClient
 
 
@@ -22,10 +22,6 @@ def _chunk(course, topic, source_file, chunk_index, text, section=None) -> Chunk
             section=section,
         ),
     )
-
-
-def _embedder(client) -> VoyageEmbedder:
-    return VoyageEmbedder(client=client, batch_size=128, max_retries=1, retry_backoff_seconds=0.0)
 
 
 @pytest.fixture

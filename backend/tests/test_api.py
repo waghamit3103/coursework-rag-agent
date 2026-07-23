@@ -5,9 +5,9 @@ import pytest
 from app.api.app import create_app
 from app.embedding.pipeline import embed_and_store
 from app.embedding.store import NotesStore
-from app.embedding.voyage_client import VoyageEmbedder
 from app.ingestion.models import Chunk, ChunkMetadata
-from tests.fake_anthropic import FakeAnthropicClient, FakeMessage, FakeTextBlock
+from tests.conftest import make_embedder as _embedder
+from tests.fake_anthropic import FakeAnthropicClient, FakeMessage, FakeTextBlock, FakeToolUseBlock
 from tests.fakes import FakeVoyageClient
 
 
@@ -22,10 +22,6 @@ def _chunk(course, topic, source_file, chunk_index, text) -> Chunk:
             chunking_method="heading",
         ),
     )
-
-
-def _embedder(client) -> VoyageEmbedder:
-    return VoyageEmbedder(client=client, batch_size=128, max_retries=1, retry_backoff_seconds=0.0)
 
 
 def _text_response(text: str) -> FakeMessage:
@@ -79,6 +75,32 @@ class TestChat:
         assert isinstance(data["conversation_id"], str) and data["conversation_id"]
         assert isinstance(data["sources"], list)
         assert data["num_tool_calls"] == 0
+
+    def test_response_with_sources_has_full_citation_shape(self, store: NotesStore):
+        app, _ = _make_app(
+            store,
+            [
+                FakeMessage(
+                    content=[
+                        FakeToolUseBlock(id="tu1", name="search_notes", input={"query": "bst"})
+                    ],
+                    stop_reason="tool_use",
+                ),
+                _text_response("a bst is a binary tree"),
+            ],
+        )
+
+        resp = app.test_client().post("/api/chat", json={"message": "what is a bst?"})
+
+        data = resp.get_json()
+        assert data["num_tool_calls"] == 1
+        assert len(data["sources"]) == 1
+        source = data["sources"][0]
+        assert source["course"] == "dsa"
+        assert source["topic"] == "trees"
+        assert source["source_file"] == "bst.md"
+        assert "score" in source
+        assert "citation" in source
 
     def test_missing_message_is_400(self, store: NotesStore):
         app, _ = _make_app(store, [])

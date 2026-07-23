@@ -405,6 +405,69 @@ and the sources-list rendering (verified by intercepting `fetch` in the
 browser to inject a response shaped like a real one, since the no-key dev
 fallback never actually calls `search_notes`).
 
+### Test suite hardening (Stage 6)
+
+**Coverage was measured, not assumed, and every gap it found was real.**
+Stages 1-5 were each built with their own tests as they went, which is
+good practice but doesn't guarantee nothing slipped through — so Stage 6
+started by running `pytest --cov=app --cov-report=term-missing` cold and
+reading the "Missing" column line by line rather than trusting the test
+count alone. That surfaced five genuine gaps, not padding:
+
+- `build_default_client()`, `build_default_embedder()`, and
+  `retrieve_with_defaults()` — the three "construct the real thing from
+  env vars" convenience factories — had zero test coverage. All three
+  turned out to be safely testable without any network call: constructing
+  `anthropic.Anthropic(api_key=...)` or `voyageai.Client(api_key=...)` is
+  pure object setup, so a test can assert the missing-key error path and
+  the constructs-successfully path with a fake key string, and
+  `retrieve_with_defaults` can be tested by monkeypatching its two module-
+  level factory imports.
+- The **PDF heading-detection branch** in `_chunk_pdf_file` — where a
+  page's extracted text contains real ATX headings, as opposed to falling
+  back to fixed-size chunking — was never exercised by the automated
+  suite at all. It had only been *manually* verified, once, during Stage
+  1's wrap-up, using a PDF that was never wired into pytest. This is
+  exactly the kind of gap a passing test suite can hide: the tests were
+  green, the coverage report is what actually caught it.
+- `read_chunks_jsonl` — the function `scripts/run_embedding.py` actually
+  depends on to load Stage 1's output — had a test that exercised
+  `write_chunks_jsonl` and then re-parsed the file with a bare
+  `json.loads()` instead of calling `read_chunks_jsonl` itself. The reader
+  function was, in effect, never called by any test.
+
+Each of these got a real test (see `tests/test_claude_client.py`,
+`tests/test_voyage_client.py::TestBuildDefaultEmbedder`,
+`tests/test_retriever.py::TestRetrieveWithDefaults`, and the new cases in
+`tests/test_pipeline.py`), landing at 100% line coverage — not chased as a
+vanity number, but because getting there is what surfaced these specific,
+real gaps. Line coverage doesn't prove every logical branch or edge case
+is meaningfully tested, but "the missing lines were all corner cases we'd
+already decided not to test" and "the missing lines turned out to be
+production code paths with zero automated verification" are very
+different findings, and this was the second one.
+
+**`--cov-fail-under=90` is now a permanent, default part of `pytest.ini`**,
+not an opt-in flag — a bare `pytest` invocation measures and enforces
+coverage every time, including in CI (Stage 8), so a future change that
+silently drops coverage below 90% fails the build rather than merging
+quietly.
+
+**Test helper consolidation was deliberately partial.** `_embedder(client)`
+was byte-for-byte identical across eight test files — a real, accidental
+duplication with no informational value, so it moved to
+`tests/conftest.py` and every file now imports it. The various `_chunk(...)`
+helpers, by contrast, differ in signature and defaults from file to file
+(some take `section`/`page`, some don't; parameter order and defaults
+vary) because each test file's `_chunk` reflects what *that* file's tests
+actually need to vary. Forcing all of them into one shared signature would
+mean every call site either passes unused parameters or the shared helper
+grows enough optional arguments to fit every caller — worse readability at
+every call site for a cosmetic reduction in line count. Duplication is a
+problem when it's accidental (the same thing, written twice, that could
+silently drift); it's not automatically a problem just because two things
+look similar.
+
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
@@ -412,7 +475,7 @@ fallback never actually calls `search_notes`).
 3. ✅ Retrieval logic (standalone, testable without the agent loop)
 4. ✅ Agent loop with Claude tool use (`search_notes`)
 5. ✅ Flask API + React chat frontend
-6. pytest suite (chunking, retrieval, API)
+6. ✅ pytest suite (chunking, retrieval, API) — 100% line coverage, enforced
 7. Docker + docker-compose
 8. GitHub Actions CI
 9. Deployment + this doc's remaining sections

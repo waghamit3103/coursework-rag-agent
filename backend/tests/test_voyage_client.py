@@ -1,6 +1,6 @@
 import pytest
 
-from app.embedding.voyage_client import VoyageEmbedder, VoyageEmbeddingError
+from app.embedding.voyage_client import VoyageEmbedder, VoyageEmbeddingError, build_default_embedder
 from tests.fakes import FakeVoyageClient
 
 
@@ -102,3 +102,21 @@ class TestRetry:
         embedder.embed_documents(["hello"])
 
         assert sleeps == [1.0, 2.0]
+
+
+class TestBuildDefaultEmbedder:
+    def test_raises_clear_error_when_key_missing(self, monkeypatch):
+        monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+
+        with pytest.raises(RuntimeError, match="VOYAGE_API_KEY"):
+            build_default_embedder()
+
+    def test_constructs_embedder_when_key_present(self, monkeypatch):
+        # Constructing voyageai.Client(api_key=...) is pure object setup —
+        # no network call happens until embed() is actually invoked — so
+        # this is safe to test with a fake key.
+        monkeypatch.setenv("VOYAGE_API_KEY", "pa-fake-key-for-testing")
+
+        embedder = build_default_embedder()
+
+        assert isinstance(embedder, VoyageEmbedder)

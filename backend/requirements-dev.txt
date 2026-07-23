@@ -1,4 +1,5 @@
 # Dev/test-only dependencies — not needed to run the app, only to develop it.
 -r requirements.txt
 pytest==8.3.3
+pytest-cov==7.1.0
 reportlab==4.2.5  # used once by tests/fixtures/generate_pdf_fixture.py to build the PDF test fixture

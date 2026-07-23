@@ -6,9 +6,10 @@ with grounded, cited answers. Claude decides when to search, evaluates whether
 results actually answer the question, and re-queries when they don't — this is
 an agent with a retrieval tool, not a fixed retrieve-then-generate pipeline.
 
-**Status:** Stage 5 of 10 complete (ingestion/chunking + embedding/vector
-storage + retrieval + agent loop + Flask API/React frontend). See
-[ARCHITECTURE.md](ARCHITECTURE.md) for the full design and the build plan.
+**Status:** Stage 6 of 10 complete (ingestion/chunking + embedding/vector
+storage + retrieval + agent loop + Flask API/React frontend + hardened
+pytest suite). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design
+and the build plan.
 
 ## Project layout
 
@@ -203,8 +204,18 @@ grounded answers.
 
 ```bash
 cd backend
-pytest -q
+pytest
 ```
+
+111 tests, 100% line coverage across `app/`, enforced (`--cov-fail-under=90`
+in `pytest.ini` — a bare `pytest` run always measures and enforces this,
+including in CI). Coverage was measured deliberately, not chased as a
+vanity number: it surfaced real gaps, including a PDF heading-detection
+branch that had only ever been manually verified and a "reader" function
+whose round-trip test was quietly calling `json.loads()` directly instead
+of the function it was meant to test. See
+[ARCHITECTURE.md](ARCHITECTURE.md#test-suite-hardening-stage-6) for the
+full list and what each one turned out to be.
 
 (No frontend test framework yet — see
 [ARCHITECTURE.md](ARCHITECTURE.md#flask-api--react-frontend-stage-5) for
@@ -267,4 +278,4 @@ reasoning — short version:
 
 ## Coming next
 
-- Stage 6+: full pytest suite, Docker, CI, deployment, evaluation script.
+- Stage 7+: Docker, CI, deployment, evaluation script.
