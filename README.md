@@ -6,16 +6,16 @@ with grounded, cited answers. Claude decides when to search, evaluates whether
 results actually answer the question, and re-queries when they don't — this is
 an agent with a retrieval tool, not a fixed retrieve-then-generate pipeline.
 
-**Status:** Stage 3 of 10 complete (ingestion/chunking + embedding/vector
-storage + retrieval). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full
-design and the build plan.
+**Status:** Stage 4 of 10 complete (ingestion/chunking + embedding/vector
+storage + retrieval + agent loop). See [ARCHITECTURE.md](ARCHITECTURE.md)
+for the full design and the build plan.
 
 ## Project layout
 
 ```
 backend/
   app/
-    config.py              # paths, chunking constants, Voyage/Chroma constants
+    config.py              # paths, chunking constants, Voyage/Chroma/Claude constants
     ingestion/
       models.py             # Chunk / ChunkMetadata, chunk_id()
       loaders.py             # .md / .txt / .pdf -> raw text
@@ -27,15 +27,24 @@ backend/
       pipeline.py              # embed_and_store(): ties embedder + store together
     retrieval/
       retriever.py            # retrieve(query, course_filter?): embed + search + rank
+    agent/
+      tools.py                # search_notes tool schema + execution
+      prompts.py               # system prompt (the "evaluate & re-query" behavior lives here)
+      loop.py                   # run_agent_turn(): the hand-written tool-use loop
+      conversation.py            # Conversation: multi-turn history across calls
+      claude_client.py            # builds the real Anthropic client from ANTHROPIC_API_KEY
   scripts/
     run_ingestion.py        # CLI: chunk everything, write data/processed/chunks.jsonl
     run_embedding.py         # CLI: embed chunks.jsonl, persist to data/chroma/
+    chat.py                   # CLI: interactive chat with the agent
   tests/
     fixtures/                # sample .md / .txt / .pdf used by the test suite
     fakes.py                  # FakeVoyageClient + ScriptedVoyageClient (no network in tests)
+    fake_anthropic.py          # FakeAnthropicClient (scripted Claude responses, no network)
     test_chunking.py / test_loaders.py / test_pipeline.py / test_models.py
     test_voyage_client.py / test_store.py / test_embedding_pipeline.py
     test_retriever.py
+    test_agent_tools.py / test_loop.py / test_conversation.py
   data/
     raw_notes/<course>/<topic>/   # sample notes ship here (see below)
     processed/                     # chunks.jsonl output (gitignored)
@@ -54,7 +63,8 @@ python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements-dev.txt
 cp .env.example .env
-# then edit .env and set VOYAGE_API_KEY (get one at https://dashboard.voyageai.com)
+# then edit .env and set VOYAGE_API_KEY (https://dashboard.voyageai.com)
+# and ANTHROPIC_API_KEY (https://console.anthropic.com)
 ```
 
 ## Notes data
@@ -135,6 +145,22 @@ just a convenience wrapper that builds the real embedder/store for you —
 Stage 4's agent tool and Stage 5's API will construct those once and call
 `retrieve()` directly instead.
 
+## Chat with the agent
+
+Requires both API keys set and embeddings already built (steps above).
+
+```bash
+cd backend
+python scripts/chat.py
+```
+
+Ask something that needs the notes ("what's the difference between
+mutual exclusion and hold-and-wait in deadlocks?"), a multi-hop question
+that should trigger more than one search ("compare BST insertion with how
+round robin scheduling handles fairness"), or something the notes don't
+cover — the agent should say so rather than answer from general
+knowledge. Sources used are printed under each answer.
+
 ## Run tests
 
 ```bash
@@ -176,10 +202,19 @@ reasoning — short version:
   cosine-similarity score. Ranking correctness is unit-tested with
   hand-computed vector geometry (a `ScriptedVoyageClient` test double), not
   just "did it return something."
+- **Agent loop**: hand-written, not the SDK's beta Tool Runner — the point
+  of this project is being able to explain how the loop works, which a
+  helper that hides it would work against. The loop itself is deliberately
+  "dumb": it runs whatever tool calls Claude asks for until Claude stops
+  asking. The actual "evaluate results, re-query with refined terms if
+  they're weak, search once per course for a multi-course question"
+  behavior is the model's own judgment, driven entirely by the system
+  prompt (`agent/prompts.py`) — not by harness code that inspects scores
+  and second-guesses the model. The `search_notes` tool's `course_filter`
+  enum is derived from the vector store's actual contents rather than
+  hardcoded, so it can't drift from what's really in `data/raw_notes/`.
 
 ## Coming next
 
-- Stage 4: agent loop — Claude decides when to call `search_notes`, evaluates
-  results, and re-queries for multi-hop questions.
-- Stage 5+: Flask API, React chat UI, full pytest suite, Docker, CI,
-  deployment, evaluation script.
+- Stage 5: Flask API + React chat UI.
+- Stage 6+: full pytest suite, Docker, CI, deployment, evaluation script.

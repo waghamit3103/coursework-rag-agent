@@ -64,3 +64,20 @@ VOYAGE_RETRY_BACKOFF_SECONDS = 1.0
 # --- Stage 3: retrieval ---
 
 DEFAULT_RETRIEVAL_N_RESULTS = 5
+
+# --- Stage 4: agent loop ---
+
+# The spec asks for "Claude API (latest Sonnet model)" specifically, not
+# "whatever's most capable" — claude-sonnet-5 is that model as of this
+# writing. Named as a constant so upgrading later is a one-line change.
+CLAUDE_MODEL = "claude-sonnet-5"
+CLAUDE_MAX_TOKENS = 2048
+# Balances answer quality against latency/cost for a tool-orchestration
+# task (search, evaluate, maybe re-search, synthesize) that doesn't need
+# the deepest reasoning depth on every single turn. Easy to raise if
+# answer quality on hard multi-hop questions doesn't hold up in practice.
+CLAUDE_EFFORT = "medium"
+# Hard cap on search_notes round-trips per user turn — guards against the
+# model looping on a query it can never satisfy. Generously above the 1-3
+# calls a typical multi-hop question needs.
+MAX_TOOL_ITERATIONS = 5

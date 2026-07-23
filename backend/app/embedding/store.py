@@ -90,6 +90,21 @@ class NotesStore:
     def count(self) -> int:
         return self._collection.count()
 
+    def distinct_courses(self) -> List[str]:
+        """Every distinct `course` value currently in the collection,
+        sorted. ChromaDB has no native "distinct values" query, so this
+        pulls all metadata and dedupes client-side — fine at this
+        project's scale (tens to low hundreds of chunks); a much larger
+        corpus would want this cached rather than recomputed per call.
+
+        Exists so the agent's search_notes tool schema (Stage 4) can
+        derive its course_filter enum from whatever's actually been
+        embedded, rather than a hardcoded list that could drift from the
+        real data/raw_notes/ contents.
+        """
+        result = self._collection.get(include=["metadatas"])
+        return sorted({m["course"] for m in result["metadatas"]})
+
     def query(
         self,
         query_embedding: List[float],

@@ -271,12 +271,82 @@ single citation string at retrieval time means a future caller (the API
 response shape in Stage 5, say) can render them differently without
 re-parsing anything.
 
+### Agent loop (Stage 4)
+
+**Hand-written loop, not the SDK's beta Tool Runner.** The Anthropic SDK
+ships `client.beta.messages.tool_runner()`, which hides the entire
+call → execute-tools → feed-results-back → repeat cycle. Using it would
+mean less code, but this project's whole premise is being able to defend
+*how the agent works*, not just that it works — and the loop is short and
+simple enough (one tool, a `while`-shaped `for` loop, a stop-reason check)
+that hand-writing it costs little and keeps every mechanic — what a tool
+call looks like, how results feed back, what counts as "the model is
+done" — visible and testable rather than living inside a beta helper. It
+also means zero beta-API surface area: the loop runs entirely on the
+stable `client.messages.create`.
+
+**The loop does not decide *when* to re-query — the system prompt does,
+and the model's own judgment executes it.** This is the actual
+distinction between "an agent with a retrieval tool" and "a fixed
+retrieve-then-generate pipeline," and it's worth being precise about where
+that behavior actually lives: `run_agent_turn` has no code that inspects
+a result set's relevance scores and decides "this is too weak, force
+another search." It just runs whatever tool calls Claude asks for, in a
+loop, until Claude stops asking. The instruction to evaluate whether
+results are good enough, and to search again with refined terms if not,
+or to search once per course for a multi-course question, lives entirely
+in `prompts.py`'s system prompt. Keeping the harness this "dumb" is
+deliberate — the interesting decision-making is the model's, and a harness
+that tried to second-guess "was that a good enough result?" itself would
+be re-implementing judgment the model is already better positioned to make.
+
+**The `course_filter` tool parameter's `enum` is derived from
+`store.distinct_courses()` at tool-build time, not hardcoded.** The four
+course names already exist as ground truth in `data/raw_notes/`'s
+directory structure; writing them a second time into the tool schema
+would be a second place to keep in sync, and letting them drift (add a
+fifth course, forget the tool schema) would either make the agent reject
+a valid filter or silently accept one matching nothing.
+
+**A hard cap (`MAX_TOOL_ITERATIONS`) forces a final tools-free call rather
+than the turn ever silently returning empty.** If the model is still
+asking to search after the cap, the loop makes one more call with `tools`
+omitted entirely, so Claude is forced to synthesize an answer from
+whatever's already been gathered rather than the conversation just
+stalling. This is a defensive measure for a failure mode that shouldn't
+happen often in practice (most questions resolve in 1-3 searches) but is
+cheap to guard against.
+
+**Source deduplication keeps the highest-scoring instance of each
+chunk.** A refined re-query often re-surfaces some of the same chunks the
+first search found (different query wording, overlapping relevant
+content) — `_dedupe_sources` collapses these by
+`(course, topic, source_file, chunk_index)` before the caller sees them,
+so the UI doesn't show the same citation twice with two different scores.
+
+**Testing the loop without a network call required a second fake — one
+for the Claude API this time, not just Voyage.** `FakeAnthropicClient` in
+`tests/fake_anthropic.py` takes a scripted list of responses and returns
+them in sequence, which is what makes it possible to unit-test genuinely
+agentic scenarios deterministically: a weak first search followed by a
+refined re-query, parallel tool calls in one response (both must land in
+a single `tool_result` user message, not two — the API requires this),
+the iteration cap forcing a tools-free final call, and a `refusal`
+stop_reason being handled instead of crashing. Writing this fake surfaced
+a real bug in the fake itself, not the production code: the first version
+stored a reference to the same mutable `messages` list on every call, so
+every recorded call retroactively showed the *final* conversation state
+instead of what was actually sent at that point in time — fixed by
+snapshotting (`list(messages)`) at call time. Worth remembering when
+building any test double around a loop that mutates a shared list across
+iterations.
+
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
 2. ✅ Embedding (Voyage AI `voyage-3-large`) + ChromaDB storage
 3. ✅ Retrieval logic (standalone, testable without the agent loop)
-4. Agent loop with Claude tool use (`search_notes`)
+4. ✅ Agent loop with Claude tool use (`search_notes`)
 5. Flask API + React chat frontend
 6. pytest suite (chunking, retrieval, API)
 7. Docker + docker-compose
