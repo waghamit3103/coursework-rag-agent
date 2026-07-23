@@ -144,10 +144,81 @@ way in practice).
   separate files. This is intentional — the citation for each chunk should
   point at exactly the file the student wrote it in.
 
+### Embedding + storage (Stage 2)
+
+**`input_type="document"` at storage time, `input_type="query"` at search
+time — this is not optional.** Voyage's embedding models accept an
+`input_type` hint that changes how the model treats the text — a
+document being indexed vs. a query searching for one — which meaningfully
+improves retrieval quality over embedding both the same way (an asymmetric
+embedding technique). Every chunk is embedded with `input_type="document"`
+in `VoyageEmbedder.embed_documents`; Stage 3's retrieval function must call
+`embed_query`, never `embed_documents`, for the user's search text. Getting
+this backwards wouldn't error — it would just silently produce worse
+retrieval, which is the kind of bug that's easy to miss without knowing to
+look for it.
+
+**One ChromaDB collection with `course`/`topic` as metadata, not one
+collection per course.** A collection per course was the obvious
+alternative, but it would mean the agent's `search_notes(query,
+course_filter?)` tool (Stage 4) either has to pick a collection up front or
+fan out across all of them for an unfiltered, cross-course search — and
+"unfiltered" is the *common* case, since multi-hop questions in the spec
+("compare X from the DSA notes with Y from the OS notes") need to search
+across courses in one call. A single collection with `course` as a
+metadata field makes an optional filter genuinely optional: no filter
+searches everything, `where={"course": "dsa"}` scopes it, and both are the
+same code path.
+
+**Metadata values that are `None` are stripped before storage, not passed
+through.** I discovered empirically that ChromaDB (1.5.9) doesn't error on
+a `None` metadata value — it silently drops that key from the stored
+record. Relying on that undocumented behavior would mean the actual stored
+schema is whatever Chroma's internals decide, invisibly, and could change
+between versions. `ChunkMetadata.to_chroma_metadata()` strips `None`
+values explicitly, so a `.txt` chunk's absent `section`/`page` keys are a
+documented, tested decision instead of a side effect discovered by reading
+Chroma's source.
+
+**Every re-embed of a file deletes that file's existing chunks before
+inserting the fresh set — chunk IDs are deterministic
+(`<course>/<topic>/<source_file>#<chunk_index>`) but upsert-by-ID alone
+isn't enough.** If a file is edited such that it now produces fewer chunks
+than before (7 → 5, say), a plain upsert correctly overwrites indices 0–4
+but leaves indices 5 and 6 behind — nothing ever removes them, since
+nothing new is being written to those IDs. Deleting every chunk belonging
+to that file before inserting its current chunk set sidesteps the problem
+entirely: the store always reflects exactly the current chunking, with no
+diffing logic required. This is a local, no-network ChromaDB operation, so
+it's cheap to do unconditionally on every run rather than trying to detect
+whether it's actually needed.
+
+**Voyage API calls are batched across the whole set of chunks being
+embedded, not once per source file.** The first version of this pipeline
+grouped chunks by source file for both the delete-stale-chunks step *and*
+the embedding call, on the theory that "process one file at a time" is a
+natural unit of work. In practice this was a real bug, not just a
+theoretical inefficiency: running it against a freshly created Voyage
+account (no payment method added yet, so subject to Voyage's reduced rate
+limit of 3 requests/minute) immediately hit `RateLimitError`, because 6
+sample files meant 6 back-to-back API calls in the same run. The fix was to
+recognize that "which local rows are stale" and "how API calls should be
+batched" are unrelated concerns — deletion stays scoped per file (a cheap,
+local operation), but the embedding call batches across *all* pending
+chunks up to `VOYAGE_EMBED_BATCH_SIZE`, regardless of which file they came
+from. That turned our 6-file sample set from 6 API calls into 1.
+
+**Retry with exponential backoff around each Voyage API call**, since a
+third-party network call is a real, common failure mode (rate limits,
+transient 5xxs) worth handling explicitly rather than letting the whole
+ingestion run die on the first blip. `VoyageEmbedder` takes an injectable
+`sleep_fn` specifically so this is unit-testable without actually sleeping
+in the test suite (see `tests/test_voyage_client.py`).
+
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
-2. Embedding (Voyage AI `voyage-3-large`) + ChromaDB storage
+2. ✅ Embedding (Voyage AI `voyage-3-large`) + ChromaDB storage
 3. Retrieval logic (standalone, testable without the agent loop)
 4. Agent loop with Claude tool use (`search_notes`)
 5. Flask API + React chat frontend

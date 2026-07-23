@@ -183,3 +183,18 @@ def write_chunks_jsonl(chunks: List[Chunk], out_path: Path) -> None:
     with out_path.open("w", encoding="utf-8") as f:
         for chunk in chunks:
             f.write(json.dumps(chunk.to_dict(), ensure_ascii=False) + "\n")
+
+
+def read_chunks_jsonl(path: Path) -> List[Chunk]:
+    """Inverse of write_chunks_jsonl — lets the embedding stage consume the
+    ingestion stage's output without needing to re-run chunking, so the two
+    stages stay independently runnable and testable.
+    """
+    chunks: List[Chunk] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            record = json.loads(line)
+            chunks.append(
+                Chunk(text=record["text"], metadata=ChunkMetadata(**record["metadata"]))
+            )
+    return chunks

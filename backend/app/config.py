@@ -8,7 +8,14 @@ introduce env-var overrides without this module's call sites changing.
 
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+# Load backend/.env once, here, so every module that imports config (which
+# is effectively every module in this app) has API keys available in
+# os.environ without each call site needing its own load_dotenv() call.
+load_dotenv(BACKEND_DIR / ".env")
 DATA_DIR = BACKEND_DIR / "data"
 RAW_NOTES_DIR = DATA_DIR / "raw_notes"
 PROCESSED_DIR = DATA_DIR / "processed"
@@ -34,3 +41,22 @@ MAX_SECTION_WORDS = 450
 MIN_CHUNK_WORDS = 40
 
 SUPPORTED_EXTENSIONS = {".md", ".txt", ".pdf"}
+
+# --- Stage 2: embedding + vector storage ---
+
+CHROMA_PERSIST_DIR = DATA_DIR / "chroma"
+CHROMA_COLLECTION_NAME = "course_notes"
+
+VOYAGE_MODEL = "voyage-3-large"
+# Fixed explicitly rather than left to the API default: voyage-3-large
+# supports 256/512/1024/2048-dim output via the output_dimension param.
+# 1024 is Voyage's own recommended balance of retrieval quality vs.
+# storage/compute cost for a general-purpose corpus like course notes.
+VOYAGE_OUTPUT_DIMENSION = 1024
+# Conservative default — well under Voyage's per-request text-count limit.
+# At this project's scale (tens to low hundreds of chunks) most files embed
+# in a single batch; the batching logic exists so this doesn't fall over
+# if a much larger notes collection is ingested later.
+VOYAGE_EMBED_BATCH_SIZE = 128
+VOYAGE_MAX_RETRIES = 3
+VOYAGE_RETRY_BACKOFF_SECONDS = 1.0

@@ -28,6 +28,16 @@ class ChunkMetadata:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    def to_chroma_metadata(self) -> dict:
+        """ChromaDB silently drops any key whose value is None rather than
+        erroring — which means a stored chunk's metadata dict ends up
+        missing keys unpredictably (present for chunks with a section,
+        absent for chunks without one). Stripping None values ourselves,
+        explicitly, makes that behavior a documented decision instead of an
+        implicit side effect of the vector store's internals.
+        """
+        return {k: v for k, v in self.to_dict().items() if v is not None}
+
 
 @dataclass
 class Chunk:
@@ -36,3 +46,15 @@ class Chunk:
 
     def to_dict(self) -> dict:
         return {"text": self.text, "metadata": self.metadata.to_dict()}
+
+
+def chunk_id(chunk: Chunk) -> str:
+    """Deterministic, human-readable ID for a chunk's position in the vector
+    store: "<course>/<topic>/<source_file>#<chunk_index>". Deterministic so
+    re-embedding an unchanged file produces the same IDs (upsert overwrites
+    in place rather than duplicating); human-readable so a ChromaDB browser
+    or a debug log line is self-explanatory without a join back to the
+    source file.
+    """
+    m = chunk.metadata
+    return f"{m.course}/{m.topic}/{m.source_file}#{m.chunk_index}"
