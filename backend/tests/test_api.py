@@ -179,3 +179,61 @@ class TestChat:
         body = resp.get_json()
         assert "error" in body
         assert "RuntimeError" not in body["error"]  # no leaked internals
+
+
+class TestCORS:
+    def test_default_origin_is_allowed(self, store: NotesStore, monkeypatch):
+        monkeypatch.delenv("FRONTEND_ORIGIN", raising=False)
+        app, _ = _make_app(store, [])
+
+        resp = app.test_client().get(
+            "/api/health", headers={"Origin": "http://localhost:5173"}
+        )
+
+        assert resp.access_control_allow_origin == "http://localhost:5173"
+
+    def test_unlisted_origin_is_rejected(self, store: NotesStore, monkeypatch):
+        monkeypatch.delenv("FRONTEND_ORIGIN", raising=False)
+        app, _ = _make_app(store, [])
+
+        resp = app.test_client().get(
+            "/api/health", headers={"Origin": "https://evil.example.com"}
+        )
+
+        assert resp.access_control_allow_origin is None
+
+    def test_deployed_origin_from_env_is_allowed(self, store: NotesStore, monkeypatch):
+        monkeypatch.setenv("FRONTEND_ORIGIN", "https://coursework-rag-agent.vercel.app")
+        app, _ = _make_app(store, [])
+
+        resp = app.test_client().get(
+            "/api/health",
+            headers={"Origin": "https://coursework-rag-agent.vercel.app"},
+        )
+
+        assert (
+            resp.access_control_allow_origin
+            == "https://coursework-rag-agent.vercel.app"
+        )
+
+    def test_comma_separated_origins_both_allowed(self, store: NotesStore, monkeypatch):
+        monkeypatch.setenv(
+            "FRONTEND_ORIGIN",
+            "http://localhost:5173,https://coursework-rag-agent.vercel.app",
+        )
+        app, _ = _make_app(store, [])
+        test_client = app.test_client()
+
+        local = test_client.get(
+            "/api/health", headers={"Origin": "http://localhost:5173"}
+        )
+        deployed = test_client.get(
+            "/api/health",
+            headers={"Origin": "https://coursework-rag-agent.vercel.app"},
+        )
+
+        assert local.access_control_allow_origin == "http://localhost:5173"
+        assert (
+            deployed.access_control_allow_origin
+            == "https://coursework-rag-agent.vercel.app"
+        )
