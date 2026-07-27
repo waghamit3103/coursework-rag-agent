@@ -358,6 +358,3 @@ reasoning — short version:
   fixed live: an environment-variable name typo, and CORS needing an
   actual process restart, not just a saved dashboard setting.
 
-## Coming next
-
-- Stage 10 (stretch): evaluation script + optional pgvector upgrade.
