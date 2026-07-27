@@ -1,15 +1,34 @@
 # Coursework RAG Agent
 
+**Live demo:** https://coursework-rag-agent.vercel.app
+(Backend API: https://coursework-rag-agent-1.onrender.com/api/health)
+
+> Free-tier hosting means the backend spins down after ~15 minutes of
+> inactivity. The first message after a period of inactivity can take up to
+> a minute (Render's cold-start wake, plus our entrypoint re-bootstrapping
+> the vector store since the free tier's disk is ephemeral — see
+> [ARCHITECTURE.md](ARCHITECTURE.md#deployment-stage-9)) — it's not stuck,
+> just waking up. Every message after that first one is fast.
+
+> 📸 **Screenshot/GIF placeholder** — add one at `docs/demo-screenshot.png`
+> and reference it here (`![demo](docs/demo-screenshot.png)`). Easiest way:
+> open the live demo link above, ask a question, and screenshot the
+> result — a cross-course comparison question (e.g. "compare BST
+> insertion with round robin scheduling fairness") shows the agentic
+> multi-search behavior best.
+
 An agentic RAG application for querying your own class notes (Data Structures &
 Algorithms, Operating Systems, Machine Learning, OOP) through a chat interface,
 with grounded, cited answers. Claude decides when to search, evaluates whether
 results actually answer the question, and re-queries when they don't — this is
 an agent with a retrieval tool, not a fixed retrieve-then-generate pipeline.
 
-**Status:** Stage 8 of 10 complete (ingestion/chunking + embedding/vector
+**Status:** All 9 core stages complete (ingestion/chunking + embedding/vector
 storage + retrieval + agent loop + Flask API/React frontend + hardened
-pytest suite + Docker/docker-compose + CI). See
+pytest suite + Docker/docker-compose + CI + live deployment). See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and the build plan.
+Stage 10 (evaluation script + pgvector) is an optional stretch goal, not
+blocking.
 
 ## Project layout
 
@@ -329,7 +348,16 @@ reasoning — short version:
   is why the workflow works identically on a fork's pull request. The
   workflow itself was run locally with [`act`](https://github.com/nektos/act)
   before ever being pushed, rather than trusting the YAML on faith.
+- **Deployment**: Render (backend, Docker) + Vercel (frontend, static).
+  CORS is restricted to the real deployed frontend origin via
+  `FRONTEND_ORIGIN`, not left wide open. Render's free tier has no
+  persistent disk, so the entrypoint's auto-bootstrap (Stage 7) — chunk +
+  embed if the store is empty — does double duty as the mechanism that
+  makes an ephemeral filesystem a non-issue rather than a production
+  bug. See ARCHITECTURE.md for two real deployment issues found and
+  fixed live: an environment-variable name typo, and CORS needing an
+  actual process restart, not just a saved dashboard setting.
 
 ## Coming next
 
-- Stage 9+: deployment, evaluation script.
+- Stage 10 (stretch): evaluation script + optional pgvector upgrade.

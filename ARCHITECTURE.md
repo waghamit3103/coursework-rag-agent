@@ -567,6 +567,82 @@ duplicated as a CLI flag in the workflow, so local `pytest` and CI enforce
 the identical bar by construction rather than by two configs happening to
 agree.
 
+### Deployment (Stage 9)
+
+**Render (backend, Docker) + Vercel (frontend, static) — two hosts, not
+one.** The backend is a long-running process with real dependencies
+(Anthropic, Voyage, a vector store); the frontend is a static bundle that
+only needs a CDN. Splitting them onto the platform each is actually built
+for — Render's Docker-native web services, Vercel's zero-config
+Vite/static hosting — is the standard shape for this kind of app, and
+each side redeploys independently of the other.
+
+**CORS is restricted to the real deployed frontend origin, not left
+open.** `FRONTEND_ORIGIN` (see the Flask API section above) is set on
+Render to the actual Vercel URL once it existed — verified directly, not
+assumed: a request with the Vercel origin gets
+`Access-Control-Allow-Origin` back, a request with an arbitrary origin
+gets no such header, confirmed with `curl -H "Origin: ..."` against the
+live backend for both cases.
+
+**Free tier means no persistent disk — which the Stage 7 auto-bootstrap
+entrypoint already exists to handle, not a new problem to solve.** Render's
+free web services have an ephemeral filesystem: every restart (including
+the free tier's spin-down-after-15-minutes-idle, spin-up-on-next-request
+behavior) means `data/chroma/` and `data/processed/` are gone, starting
+from whatever was baked into the image. This is exactly the scenario
+`docker-entrypoint.sh`'s empty-store check was built and tested against in
+Stage 7 — so on Render it's not a special case requiring new code, just
+the same bootstrap running on every cold start. The real cost: the first
+request after any idle period pays Render's own wake-up latency *plus* a
+few seconds of re-chunking and one real Voyage embedding call, before the
+first response comes back. Documented directly in the README next to the
+live link rather than left as a surprise.
+
+**Two real deployment bugs, found and fixed live, not anticipated in
+advance:**
+
+1. **An environment variable name typo — `VOYAGER_API_KEY` instead of
+   `VOYAGE_API_KEY`** — showed up independently in two places (the local
+   `.env` file and Render's dashboard), most likely because "Voyager"
+   reads as the more natural English word and autocomplete/muscle memory
+   filled in the extra R. The failure mode was informative rather than
+   confusing: the entrypoint's bootstrap logic ran exactly as designed
+   (ingestion succeeded, produced the same 32 chunks every prior run
+   produced) and then failed with a precise `RuntimeError:
+   VOYAGE_API_KEY is not set` at the embedding step — which is to say,
+   the "fail loudly and specifically" design goal from Stage 7 did its
+   job; the failure pointed straight at the actual cause.
+2. **Saving an environment variable on Render's dashboard doesn't by
+   itself restart the running process.** Setting `FRONTEND_ORIGIN` and
+   re-checking CORS immediately afterward showed *no*
+   `Access-Control-Allow-Origin` header for *either* the correct origin
+   or a deliberately wrong one — which, on reflection, is exactly what
+   you'd see if the already-running gunicorn process never re-read its
+   environment and was still using the code's built-in default
+   (`http://localhost:5173`, matching neither test origin). Confirmed by
+   triggering an explicit redeploy and re-testing: the correct origin
+   then got the header back, the wrong one still didn't. The lesson
+   generalizes beyond Render — anything that reads `os.environ` at
+   import/startup time (as `create_app` does here) needs a process
+   restart to observe a changed environment variable, not just a saved
+   config value.
+
+**Verified live, not just in Docker or with fakes — including the
+project's central agentic claim.** Two real requests against the deployed
+system, through the actual Vercel → Render path, with the real Anthropic
+and Voyage APIs for the first time in the whole project:
+- A single-topic question (BST balance) returned `num_tool_calls: 1` with
+  five correctly-ranked, correctly-cited sources.
+- A deliberately cross-course comparison question (BST insertion vs. round
+  robin fairness) returned `num_tool_calls: 2` — the agent genuinely
+  issued two separate searches, one per course, and synthesized an actual
+  comparison rather than concatenating two retrieved passages. This is
+  the concrete, observed version of the "agent with a retrieval tool, not
+  a fixed retrieve-then-generate pipeline" claim the whole project is
+  built around — verified against the real API, not inferred from the
+  `FakeAnthropicClient`-driven test suite.
+
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
@@ -577,5 +653,5 @@ agree.
 6. ✅ pytest suite (chunking, retrieval, API) — 100% line coverage, enforced
 7. ✅ Docker + docker-compose
 8. ✅ GitHub Actions CI
-9. Deployment + this doc's remaining sections
+9. ✅ Deployment (Render backend + Vercel frontend, live) + this doc
 10. (Stretch) Evaluation script + pgvector upgrade
