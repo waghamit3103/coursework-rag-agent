@@ -3,32 +3,31 @@
 **Live demo:** https://coursework-rag-agent.vercel.app
 (Backend API: https://coursework-rag-agent-1.onrender.com/api/health)
 
-> Free-tier hosting means the backend spins down after ~15 minutes of
-> inactivity. The first message after a period of inactivity can take up to
-> a minute (Render's cold-start wake, plus our entrypoint re-bootstrapping
-> the vector store since the free tier's disk is ephemeral — see
-> [ARCHITECTURE.md](ARCHITECTURE.md#deployment-stage-9)) — it's not stuck,
-> just waking up. Every message after that first one is fast.
+> Both the frontend and backend are on free tiers, so the backend spins
+> down after ~15 min idle. First message after that can take up to a
+> minute (Render waking up, plus re-bootstrapping the vector store since
+> the free tier's disk doesn't persist — see
+> [ARCHITECTURE.md](ARCHITECTURE.md#deployment-stage-9)). It's not
+> broken, just cold. Everything after that first message is normal
+> speed.
 
-> 📸 **Screenshot/GIF placeholder** — add one at `docs/demo-screenshot.png`
-> and reference it here (`![demo](docs/demo-screenshot.png)`). Easiest way:
-> open the live demo link above, ask a question, and screenshot the
-> result — a cross-course comparison question (e.g. "compare BST
-> insertion with round robin scheduling fairness") shows the agentic
-> multi-search behavior best.
+> 📸 Screenshot/GIF placeholder — need to add one at
+> `docs/demo-screenshot.png` and link it here. A cross-course comparison
+> question ("compare BST insertion with round robin scheduling
+> fairness") shows the multi-search behavior best, so probably use that.
 
-An agentic RAG application for querying your own class notes (Data Structures &
-Algorithms, Operating Systems, Machine Learning, OOP) through a chat interface,
-with grounded, cited answers. Claude decides when to search, evaluates whether
-results actually answer the question, and re-queries when they don't — this is
-an agent with a retrieval tool, not a fixed retrieve-then-generate pipeline.
+An agentic RAG app for querying your own class notes (Data Structures &
+Algorithms, Operating Systems, Machine Learning, OOP) through a chat
+interface, with grounded, cited answers. Claude decides when to search,
+checks whether what came back actually answers the question, and
+re-queries if it doesn't. So it's an agent that has a retrieval tool,
+not a retrieve-then-generate pipeline that always runs the same steps.
 
-**Status:** All 9 core stages complete (ingestion/chunking + embedding/vector
-storage + retrieval + agent loop + Flask API/React frontend + hardened
-pytest suite + Docker/docker-compose + CI + live deployment). See
-[ARCHITECTURE.md](ARCHITECTURE.md) for the full design and the build plan.
-Stage 10 (evaluation script + pgvector) is an optional stretch goal, not
-blocking.
+**Status:** all 9 core stages done — ingestion/chunking, embedding/vector
+storage, retrieval, agent loop, Flask API + React frontend, pytest suite,
+Docker/docker-compose, CI, and it's actually deployed. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the design writeup and build plan.
+
 
 ## Project layout
 
@@ -95,7 +94,7 @@ docker-compose.yml          # backend + frontend together for local dev
 
 ## Setup
 
-Requires Python 3.11+ (developed against 3.13) and Node 18+ (developed
+Requires Python 3.11+ (I built this against 3.13) and Node 18+ (built
 against Node 24).
 
 ```bash
@@ -115,9 +114,9 @@ npm install
 
 ## Notes data
 
-`backend/data/raw_notes/` ships with synthetic sample notes (not real course
-material) covering all four courses, in all three supported formats, so the
-pipeline is runnable and demoable out of the box:
+`backend/data/raw_notes/` ships with synthetic sample notes (not real
+course material) covering all four courses in all three supported
+formats, so you can run the whole pipeline out of the box:
 
 ```
 backend/data/raw_notes/
@@ -134,10 +133,10 @@ backend/data/raw_notes/
                                             in the extracted PDF text)
 ```
 
-Add your own notes the same way, under `backend/data/raw_notes/<course>/<topic>/`
-— the top two directory levels *are* the `course` and `topic` metadata, so
-there's no separate config file to keep in sync with your folder structure.
-Supported formats: `.md`, `.txt`, `.pdf`.
+Add your own notes under `backend/data/raw_notes/<course>/<topic>/` — the
+top two directory levels are the `course` and `topic` metadata, so there's
+no config file to keep in sync with your folder structure. Supported:
+`.md`, `.txt`, `.pdf`.
 
 ## Run ingestion
 
@@ -146,7 +145,7 @@ cd backend
 python scripts/run_ingestion.py
 ```
 
-This chunks every file under `data/raw_notes/` and writes
+Chunks every file under `data/raw_notes/` and writes
 `data/processed/chunks.jsonl` (one JSON object per chunk: `text` +
 `metadata`), plus a per-course, per-method summary to stdout. Against the
 bundled sample notes this currently produces 32 chunks (29 heading-based,
@@ -154,7 +153,7 @@ bundled sample notes this currently produces 32 chunks (29 heading-based,
 
 ## Run embedding
 
-Requires `VOYAGE_API_KEY` set in `backend/.env` (see Setup above).
+Requires `VOYAGE_API_KEY` in `backend/.env` (see Setup above).
 
 ```bash
 cd backend
@@ -162,12 +161,12 @@ python scripts/run_embedding.py
 ```
 
 Embeds every chunk from `data/processed/chunks.jsonl` with Voyage AI's
-`voyage-3-large` (one batched API call for the whole set, not one per file
-— see [ARCHITECTURE.md](ARCHITECTURE.md#embedding--storage-stage-2) for why
-that matters) and persists to a ChromaDB collection at `data/chroma/`.
-Safe to re-run: each file's existing chunks are deleted before its current
-chunks are re-inserted, so re-running after editing a note replaces that
-note's vectors rather than duplicating or orphaning them.
+`voyage-3-large` — one batched API call for the whole set, not one per
+file (see [ARCHITECTURE.md](ARCHITECTURE.md#embedding--storage-stage-2)
+for why that matters) — and persists to a ChromaDB collection at
+`data/chroma/`. Safe to re-run: each file's existing chunks get deleted
+before its current chunks are re-inserted, so editing a note and
+re-running replaces that note's vectors instead of duplicating them.
 
 ## Try retrieval
 
@@ -183,29 +182,28 @@ for r in retrieve_with_defaults('why does an unbalanced BST hurt performance?', 
 ```
 
 `retrieve(query, embedder, store, course_filter=None, n_results=5)` is the
-core function — it embeds the query (`input_type="query"`), searches
-ChromaDB (optionally scoped to one course via `course_filter`), and returns
-`RetrievedChunk` objects with a cosine-similarity `score` and a
-`.citation()` method for display. `retrieve_with_defaults(...)` above is
-just a convenience wrapper that builds the real embedder/store for you —
-Stage 4's agent tool and Stage 5's API will construct those once and call
-`retrieve()` directly instead.
+core function: it embeds the query (`input_type="query"`), searches
+ChromaDB (optionally scoped to one course via `course_filter`), and
+returns `RetrievedChunk` objects with a cosine-similarity `score` and a
+`.citation()` method. `retrieve_with_defaults(...)` above just builds the
+real embedder/store for you — the agent tool and the API construct those
+once and call `retrieve()` directly instead.
 
 ## Chat with the agent
 
-Requires both API keys set and embeddings already built (steps above).
+Requires both API keys set and embeddings already built.
 
 ```bash
 cd backend
 python scripts/chat.py
 ```
 
-Ask something that needs the notes ("what's the difference between
-mutual exclusion and hold-and-wait in deadlocks?"), a multi-hop question
-that should trigger more than one search ("compare BST insertion with how
+Try something that needs the notes ("what's the difference between mutual
+exclusion and hold-and-wait in deadlocks?"), a multi-hop question that
+should trigger more than one search ("compare BST insertion with how
 round robin scheduling handles fairness"), or something the notes don't
-cover — the agent should say so rather than answer from general
-knowledge. Sources used are printed under each answer.
+cover — it should say so instead of answering from general knowledge.
+Sources used get printed under each answer.
 
 ## Run the full app (API + frontend)
 
@@ -220,16 +218,15 @@ npm run dev                          # http://localhost:5173
 ```
 
 If `ANTHROPIC_API_KEY` isn't set yet, `run_api.py` falls back to a
-canned-response agent (loudly logged, never silent) so the whole stack —
-routing, CORS, session handling, the React UI — can be exercised end to
-end before the real key exists. Set the key and restart for real,
-grounded answers.
+canned-response agent (it logs loudly when it does this) so you can
+exercise the whole stack — routing, CORS, sessions, the React UI — before
+you have a real key. Set the key and restart for real answers.
 
 ## Run with Docker
 
-Requires both API keys in `backend/.env` (this path — unlike
-`run_api.py` — fails loudly rather than falling back to a canned agent;
-see [ARCHITECTURE.md](ARCHITECTURE.md#docker--docker-compose-stage-7)).
+Requires both API keys in `backend/.env`. Unlike `run_api.py`, this path
+fails loudly instead of falling back to a canned agent (see
+[ARCHITECTURE.md](ARCHITECTURE.md#docker--docker-compose-stage-7)).
 
 ```bash
 docker compose up --build
@@ -238,10 +235,10 @@ docker compose up --build
 ```
 
 First run with no existing `backend/data/chroma/` bootstraps
-automatically — the backend container chunks and embeds
-`data/raw_notes/` (baked into the image) before starting the server.
-Subsequent runs skip straight to serving, reusing whatever's already been
-embedded on the host. Backend health: `curl http://localhost:5000/api/health`.
+automatically: the backend container chunks and embeds `data/raw_notes/`
+(baked into the image) before starting the server. Later runs skip
+straight to serving, reusing whatever's already been embedded on the
+host. Health check: `curl http://localhost:5000/api/health`.
 
 ## Run tests
 
@@ -250,111 +247,109 @@ cd backend
 pytest
 ```
 
-111 tests, 100% line coverage across `app/`, enforced (`--cov-fail-under=90`
-in `pytest.ini` — a bare `pytest` run always measures and enforces this,
-including in CI). Coverage was measured deliberately, not chased as a
-vanity number: it surfaced real gaps, including a PDF heading-detection
-branch that had only ever been manually verified and a "reader" function
-whose round-trip test was quietly calling `json.loads()` directly instead
-of the function it was meant to test. See
-[ARCHITECTURE.md](ARCHITECTURE.md#test-suite-hardening-stage-6) for the
-full list and what each one turned out to be.
+111 tests, 100% line coverage across `app/`, enforced via
+`--cov-fail-under=90` in `pytest.ini`. I didn't chase 100% for its own
+sake — it just kept surfacing real gaps as I went, including a PDF
+heading-detection branch I'd only ever checked by hand, and a "reader"
+round-trip test that turned out to be calling `json.loads()` directly
+instead of the function it was supposed to test. Full list in
+[ARCHITECTURE.md](ARCHITECTURE.md#test-suite-hardening-stage-6).
 
-(No frontend test framework yet — see
-[ARCHITECTURE.md](ARCHITECTURE.md#flask-api--react-frontend-stage-5) for
-why, and how the UI was verified instead.)
+(No frontend test framework yet — see ARCHITECTURE.md for why, and how I
+verified the UI instead.)
 
 ## Lint
 
 ```bash
 cd backend
 ruff check app scripts tests wsgi.py
-ruff format --check app scripts tests wsgi.py   # --check omitted: reformats in place
+ruff format --check app scripts tests wsgi.py   # drop --check to reformat in place
 
 cd ../frontend
 npm run lint
 ```
 
-Both run automatically on every push and pull request —
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Both run on every push and PR — [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Design decisions
 
-See [ARCHITECTURE.md](ARCHITECTURE.md#design-decisions) for the full
-reasoning — short version:
+Full reasoning is in [ARCHITECTURE.md](ARCHITECTURE.md#design-decisions).
+Short version:
 
-- **Chunking**: heading-aware for Markdown (splits at `#`/`##`/`###`,
-  ignoring headings inside fenced code blocks), falling back to a
-  word-count sliding window with overlap for unstructured text and for
-  any single heading section that's too large. PDFs are chunked per page,
-  attempting heading detection first (some course PDFs are exports of
-  already-structured notes) and falling back to fixed-size per page.
-- **Sizing is word-based, not token-based** — a stable, dependency-free,
-  deterministic proxy; exact token counts aren't needed for chunk
-  boundaries, only "roughly one concept per chunk."
-- **Metadata**: `course`, `topic`, `source_file`, `section` (heading path,
-  when detected), `page` (for PDFs), `chunk_index`, `chunking_method` — kept
-  as separate structured fields (not one formatted citation string) so
-  downstream code can filter or render them independently.
-- **Embedding**: `input_type="document"` for stored chunks vs.
-  `input_type="query"` at search time (Voyage's asymmetric-embedding
-  recommendation — free retrieval-quality improvement, easy to silently get
-  wrong). One ChromaDB collection with `course`/`topic` as metadata, not one
-  collection per course, so an optional course filter is genuinely optional.
-  Voyage API calls are batched across the whole set of chunks being
-  embedded (not one call per file) — an earlier per-file version hit
-  Voyage's reduced rate limit for accounts without a payment method on
-  file, which is documented in ARCHITECTURE.md as a real lesson, not a
-  hypothetical one.
-- **Retrieval**: ChromaDB's collection is explicitly configured for cosine
-  distance (confirmed the default is actually squared L2, not cosine, by
-  testing hand-constructed vectors) and converted to an interpretable
-  cosine-similarity score. Ranking correctness is unit-tested with
-  hand-computed vector geometry (a `ScriptedVoyageClient` test double), not
-  just "did it return something."
-- **Agent loop**: hand-written, not the SDK's beta Tool Runner — the point
-  of this project is being able to explain how the loop works, which a
-  helper that hides it would work against. The loop itself is deliberately
-  "dumb": it runs whatever tool calls Claude asks for until Claude stops
-  asking. The actual "evaluate results, re-query with refined terms if
-  they're weak, search once per course for a multi-course question"
-  behavior is the model's own judgment, driven entirely by the system
-  prompt (`agent/prompts.py`) — not by harness code that inspects scores
-  and second-guesses the model. The `search_notes` tool's `course_filter`
-  enum is derived from the vector store's actual contents rather than
-  hardcoded, so it can't drift from what's really in `data/raw_notes/`.
-- **API/frontend**: Flask's `create_app(client, embedder, store)` takes
-  its dependencies as arguments, same as every layer below it — which is
-  what let the entire stack (including the real React UI, in a real
-  browser) get built and manually verified before the Anthropic key
-  existed. Conversation state is a plain in-memory dict keyed by
-  `conversation_id` — a deliberate, documented scope boundary for a
-  single-instance deployment, not an oversight. No manual course-filter
-  control in the UI: the agent deciding when to use it autonomously is
-  the point of the project.
-- **Docker**: multi-stage builds for both images (compiler/Node toolchain
-  never ships in the final image). Production (`wsgi.py`) fails loudly on
-  a missing key; the local dev script falls back to a canned agent — a
-  deliberate difference, not an inconsistency. Found a real bug by
-  actually testing the fresh-bootstrap path with an empty mounted
-  directory: mounting a volume at the whole `data/` directory shadows
-  `data/raw_notes/` baked into the image at build time, not just overlays
-  it. Fixed by mounting only the derived subdirectories
-  (`data/chroma/`, `data/processed/`) — see ARCHITECTURE.md for the full
-  story.
-- **CI**: added `ruff` for backend linting/formatting (the project had
-  none before this stage); confirmed the entire pytest suite needs zero
-  repository secrets by hiding `.env` entirely and re-running it, which
-  is why the workflow works identically on a fork's pull request. The
-  workflow itself was run locally with [`act`](https://github.com/nektos/act)
-  before ever being pushed, rather than trusting the YAML on faith.
-- **Deployment**: Render (backend, Docker) + Vercel (frontend, static).
-  CORS is restricted to the real deployed frontend origin via
-  `FRONTEND_ORIGIN`, not left wide open. Render's free tier has no
-  persistent disk, so the entrypoint's auto-bootstrap (Stage 7) — chunk +
-  embed if the store is empty — does double duty as the mechanism that
-  makes an ephemeral filesystem a non-issue rather than a production
-  bug. See ARCHITECTURE.md for two real deployment issues found and
-  fixed live: an environment-variable name typo, and CORS needing an
-  actual process restart, not just a saved dashboard setting.
+**Chunking.** Heading-aware for Markdown (splits at `#`/`##`/`###`,
+ignoring headings inside fenced code blocks), falling back to a
+word-count sliding window with overlap for unstructured text and for any
+single heading section that's too large. PDFs are chunked per page,
+trying heading detection first (some course PDFs are exports of
+already-structured notes) and falling back to fixed-size per page.
+Sizing is word-based rather than token-based — it's a simpler,
+dependency-free proxy, and exact token counts don't matter for chunk
+boundaries, just "roughly one concept per chunk."
 
+**Metadata.** `course`, `topic`, `source_file`, `section` (heading path,
+when detected), `page` (for PDFs), `chunk_index`, `chunking_method` — kept
+as separate fields rather than one formatted citation string, so
+downstream code can filter or render them independently.
+
+**Embedding.** `input_type="document"` for stored chunks vs.
+`input_type="query"` at search time, per Voyage's asymmetric-embedding
+recommendation. One ChromaDB collection with `course`/`topic` as
+metadata rather than one collection per course, so the course filter is
+actually optional. API calls are batched across the whole set of chunks
+being embedded, not one call per file — an earlier per-file version hit
+Voyage's reduced rate limit for accounts without a payment method on
+file, which is why this is called out specifically rather than just
+assumed as best practice.
+
+**Retrieval.** ChromaDB's collection is explicitly configured for cosine
+distance — I checked that the default is actually squared L2, not
+cosine, by testing hand-constructed vectors — and converted to an
+interpretable cosine-similarity score. Ranking correctness is
+unit-tested against hand-computed vector geometry (a `ScriptedVoyageClient`
+test double), not just "did it return something."
+
+**Agent loop.** Hand-written rather than the SDK's beta Tool Runner,
+because the point of this project was understanding how the loop works,
+and a helper that hides it works against that. The loop itself just runs
+whatever tool calls Claude asks for until Claude stops asking — the
+"evaluate results, re-query with refined terms if they're weak, search
+once per course for a multi-course question" behavior comes entirely
+from the system prompt (`agent/prompts.py`), not from harness code
+inspecting scores. The `search_notes` tool's `course_filter` enum is
+derived from the vector store's actual contents so it can't drift from
+what's really in `data/raw_notes/`.
+
+**API/frontend.** `create_app(client, embedder, store)` takes its
+dependencies as arguments, same as every layer below it — that's what let
+the whole stack, including the real React UI in a real browser, get
+built and manually verified before the Anthropic key even existed.
+Conversation state is a plain in-memory dict keyed by `conversation_id`,
+which is fine for a single-instance deployment and not meant to scale
+past that. There's no manual course-filter control in the UI; letting the
+agent decide when to use it is the whole point.
+
+**Docker.** Multi-stage builds for both images, so the compiler/Node
+toolchain never ships in the final image. `wsgi.py` fails loudly on a
+missing key; the local dev script falls back to a canned agent instead.
+Found a real bug while testing the fresh-bootstrap path with an empty
+mounted directory: mounting a volume at the whole `data/` directory
+shadows `data/raw_notes/` baked into the image at build time — it doesn't
+just overlay it. Fixed by mounting only the derived subdirectories
+(`data/chroma/`, `data/processed/`). Full story in ARCHITECTURE.md.
+
+**CI.** Added `ruff` for backend linting/formatting (there was none
+before this). Confirmed the pytest suite needs zero repository secrets by
+hiding `.env` entirely and re-running it, so the workflow behaves the
+same on a fork's PR. Ran the workflow locally with
+[`act`](https://github.com/nektos/act) before pushing it, rather than
+trusting the YAML on faith.
+
+**Deployment.** Render (backend, Docker) + Vercel (frontend, static).
+CORS is restricted to the real deployed frontend origin via
+`FRONTEND_ORIGIN`, not left wide open. Render's free tier has no
+persistent disk, so the entrypoint's auto-bootstrap from Stage 7
+(chunk + embed if the store is empty) ends up doing double duty as the
+fix for that, rather than being a separate piece of work. Two real
+deployment bugs along the way, both in ARCHITECTURE.md: an env variable
+name typo, and a CORS change that needed an actual process restart, not
+just a saved dashboard setting.
