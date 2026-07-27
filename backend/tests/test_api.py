@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 
 import pytest
@@ -44,9 +45,12 @@ def store(tmp_path: Path) -> NotesStore:
     return s
 
 
-def _make_app(store: NotesStore, responses):
+def _make_app(store: NotesStore, responses, raw_notes_dir: Path = None):
     client = FakeAnthropicClient(responses=responses)
-    app = create_app(client=client, embedder=_embedder(FakeVoyageClient()), store=store)
+    kwargs = {} if raw_notes_dir is None else {"raw_notes_dir": raw_notes_dir}
+    app = create_app(
+        client=client, embedder=_embedder(FakeVoyageClient()), store=store, **kwargs
+    )
     app.config["TESTING"] = True
     return app, client
 
@@ -237,3 +241,200 @@ class TestCORS:
             deployed.access_control_allow_origin
             == "https://coursework-rag-agent.vercel.app"
         )
+
+
+class TestUpload:
+    def test_happy_path_saves_chunks_and_embeds(
+        self, store: NotesStore, tmp_path: Path
+    ):
+        raw_notes_dir = tmp_path / "raw_notes"
+        app, _ = _make_app(store, [], raw_notes_dir=raw_notes_dir)
+
+        data = {
+            "course": "DSA",
+            "topic": "Linked Lists",
+            "file": (
+                io.BytesIO(b"# Linked Lists\n\nA linked list is a chain of nodes."),
+                "notes.md",
+            ),
+        }
+        resp = app.test_client().post(
+            "/api/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["course"] == "dsa"
+        assert body["topic"] == "linked-lists"
+        assert body["files"] == [
+            {"source_file": "notes.md", "chunks_embedded": body["chunks_embedded"]}
+        ]
+        assert body["chunks_embedded"] >= 1
+        assert (raw_notes_dir / "dsa" / "linked-lists" / "notes.md").exists()
+        assert "dsa" in store.distinct_courses()
+
+    def test_multiple_files_in_one_request(self, store: NotesStore, tmp_path: Path):
+        raw_notes_dir = tmp_path / "raw_notes"
+        app, _ = _make_app(store, [], raw_notes_dir=raw_notes_dir)
+
+        data = {
+            "course": "dsa",
+            "topic": "trees",
+            "file": [
+                (
+                    io.BytesIO(b"# BST\n\nA binary search tree orders nodes by key."),
+                    "bst.md",
+                ),
+                (io.BytesIO(b"an avl tree is a self-balancing bst"), "avl.txt"),
+            ],
+        }
+        resp = app.test_client().post(
+            "/api/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["course"] == "dsa"
+        assert body["topic"] == "trees"
+        source_files = {f["source_file"] for f in body["files"]}
+        assert source_files == {"bst.md", "avl.txt"}
+        assert all(f["chunks_embedded"] >= 1 for f in body["files"])
+        assert body["chunks_embedded"] == sum(
+            f["chunks_embedded"] for f in body["files"]
+        )
+        assert (raw_notes_dir / "dsa" / "trees" / "bst.md").exists()
+        assert (raw_notes_dir / "dsa" / "trees" / "avl.txt").exists()
+
+    def test_one_bad_extension_in_a_batch_rejects_whole_batch(
+        self, store: NotesStore, tmp_path: Path
+    ):
+        raw_notes_dir = tmp_path / "raw_notes"
+        app, _ = _make_app(store, [], raw_notes_dir=raw_notes_dir)
+
+        data = {
+            "course": "dsa",
+            "topic": "trees",
+            "file": [
+                (io.BytesIO(b"good note content"), "good.txt"),
+                (io.BytesIO(b"binary junk"), "bad.exe"),
+            ],
+        }
+        resp = app.test_client().post(
+            "/api/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert resp.status_code == 400
+        assert "Unsupported file type" in resp.get_json()["error"]
+        # Nothing from the batch should have been written to disk.
+        assert not (raw_notes_dir / "dsa" / "trees" / "good.txt").exists()
+
+    def test_missing_file_is_400(self, store: NotesStore, tmp_path: Path):
+        app, _ = _make_app(store, [], raw_notes_dir=tmp_path / "raw_notes")
+        resp = app.test_client().post(
+            "/api/upload",
+            data={"course": "dsa", "topic": "trees"},
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 400
+        assert "error" in resp.get_json()
+
+    def test_unsupported_extension_is_400(self, store: NotesStore, tmp_path: Path):
+        app, _ = _make_app(store, [], raw_notes_dir=tmp_path / "raw_notes")
+        data = {
+            "course": "dsa",
+            "topic": "trees",
+            "file": (io.BytesIO(b"binary junk"), "notes.exe"),
+        }
+        resp = app.test_client().post(
+            "/api/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert resp.status_code == 400
+        assert "Unsupported file type" in resp.get_json()["error"]
+
+    def test_missing_course_or_topic_is_400(self, store: NotesStore, tmp_path: Path):
+        app, _ = _make_app(store, [], raw_notes_dir=tmp_path / "raw_notes")
+        data = {"topic": "trees", "file": (io.BytesIO(b"hello"), "notes.txt")}
+        resp = app.test_client().post(
+            "/api/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert resp.status_code == 400
+        assert "error" in resp.get_json()
+
+    def test_empty_file_is_400_and_not_left_on_disk(
+        self, store: NotesStore, tmp_path: Path
+    ):
+        raw_notes_dir = tmp_path / "raw_notes"
+        app, _ = _make_app(store, [], raw_notes_dir=raw_notes_dir)
+        data = {
+            "course": "dsa",
+            "topic": "trees",
+            "file": (io.BytesIO(b"   \n\n   "), "empty.txt"),
+        }
+        resp = app.test_client().post(
+            "/api/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert resp.status_code == 400
+        assert not (raw_notes_dir / "dsa" / "trees" / "empty.txt").exists()
+
+    def test_course_and_topic_are_slugified(self, store: NotesStore, tmp_path: Path):
+        raw_notes_dir = tmp_path / "raw_notes"
+        app, _ = _make_app(store, [], raw_notes_dir=raw_notes_dir)
+        data = {
+            "course": "  Operating Systems! ",
+            "topic": "CPU Scheduling",
+            "file": (
+                io.BytesIO(
+                    b"round robin scheduling gives each process a fixed time slice"
+                ),
+                "notes.txt",
+            ),
+        }
+        resp = app.test_client().post(
+            "/api/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["course"] == "operating-systems"
+        assert body["topic"] == "cpu-scheduling"
+        assert (
+            raw_notes_dir / "operating-systems" / "cpu-scheduling" / "notes.txt"
+        ).exists()
+
+    def test_embedding_failure_returns_502_and_cleans_up_file(
+        self, store: NotesStore, tmp_path: Path
+    ):
+        raw_notes_dir = tmp_path / "raw_notes"
+        client = FakeAnthropicClient(responses=[])
+
+        class BoomingEmbedder:
+            def embed_documents(self, texts):
+                raise RuntimeError("simulated Voyage API failure")
+
+        from app.api.app import create_app as _create_app
+
+        app = _create_app(
+            client=client,
+            embedder=BoomingEmbedder(),
+            store=store,
+            raw_notes_dir=raw_notes_dir,
+        )
+        app.config["TESTING"] = True
+
+        data = {
+            "course": "dsa",
+            "topic": "trees",
+            "file": (io.BytesIO(b"some real note content here"), "notes.txt"),
+        }
+        resp = app.test_client().post(
+            "/api/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert resp.status_code == 502
+        body = resp.get_json()
+        assert "RuntimeError" not in body["error"]
+        assert not (raw_notes_dir / "dsa" / "trees" / "notes.txt").exists()

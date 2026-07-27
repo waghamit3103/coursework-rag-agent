@@ -6,10 +6,12 @@ real, fully-wired Flask app with zero network calls (see tests/test_api.py).
 """
 
 import os
+from pathlib import Path
 
 from flask import Flask
 from flask_cors import CORS
 
+from app import config
 from app.api.routes import bp
 from app.api.sessions import ConversationStore
 
@@ -21,13 +23,24 @@ from app.api.sessions import ConversationStore
 DEFAULT_FRONTEND_ORIGIN = "http://localhost:5173"
 
 
-def create_app(client, embedder, store) -> Flask:
+def create_app(
+    client, embedder, store, raw_notes_dir: Path = config.RAW_NOTES_DIR
+) -> Flask:
     app = Flask(__name__)
 
     origins = os.environ.get("FRONTEND_ORIGIN", DEFAULT_FRONTEND_ORIGIN).split(",")
     CORS(app, origins=[origin.strip() for origin in origins])
 
+    # 20MB is generous for course notes (.md/.txt/.pdf) while still bounding
+    # request size — Flask returns a clean 413 on its own for anything over.
+    app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
+
     app.config["NOTES_STORE"] = store
+    app.config["EMBEDDER"] = embedder
+    # Injectable like everything else here, specifically so tests can point
+    # uploads at a tmp_path instead of writing into the real backend/data
+    # tree (see tests/test_api.py::TestUpload).
+    app.config["RAW_NOTES_DIR"] = raw_notes_dir
     app.config["CONVERSATION_STORE"] = ConversationStore(
         client=client, embedder=embedder, store=store
     )

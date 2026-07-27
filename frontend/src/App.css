@@ -16,13 +16,108 @@
 
 .chat__header h1 {
   font-size: 20px;
-  margin: 0 0 4px;
+  margin: 0;
 }
 
-.chat__courses {
+.chat__upload-toggle {
+  width: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.chat__upload-toggle:hover {
+  border-color: var(--accent);
+}
+
+.chat__upload-toggle--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  transform: rotate(45deg);
+}
+
+.chat__upload-panel {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.upload-notes {
   margin: 0;
+}
+
+.upload-notes__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.upload-notes__file {
+  flex: 1 1 180px;
   font-size: 13px;
+  color: var(--text);
+  min-width: 0;
+}
+
+.upload-notes__text {
+  flex: 1 1 120px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.upload-notes__text:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.upload-notes__button {
+  border: none;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.upload-notes__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.upload-notes__file-list {
+  margin: 6px 0 0;
+  font-size: 12.5px;
   color: var(--text-muted);
+}
+
+.upload-notes__message {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+}
+
+.upload-notes__message--success {
+  color: var(--text-muted);
+}
+
+.upload-notes__message--error {
+  color: var(--bubble-error-text);
 }
 
 .chat__messages {

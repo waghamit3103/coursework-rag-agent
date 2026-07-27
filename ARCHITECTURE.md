@@ -643,6 +643,96 @@ and Voyage APIs for the first time in the whole project:
   built around — verified against the real API, not inferred from the
   `FakeAnthropicClient`-driven test suite.
 
+### Web upload (Stage 10)
+
+**`POST /api/upload` reuses the Stage 1/2 pipeline functions directly —
+`chunk_file` and `embed_and_store` — rather than a parallel "web ingestion"
+code path.** The same reasoning as Stage 5's Flask routes applies here: a
+second implementation of chunking-then-embedding would inevitably drift
+from the one the CLI scripts and the test suite already exercise. An
+uploaded file is written to `data/raw_notes/<course>/<topic>/<file>` —
+identical to how a manually-added file would sit — and then handed to
+exactly the functions `scripts/run_ingestion.py` and
+`scripts/run_embedding.py` already call. A file uploaded through the web
+UI and a file added by hand and re-ingested via the CLI are
+indistinguishable to the rest of the system.
+
+**Course/topic form fields are slugified before touching the filesystem,
+not used raw.** Stage 1 made the directory structure the single source of
+truth for `course`/`topic`; a web form now writes into that structure from
+free-text user input, which changes the threat model — `course_topic_from_path`
+trusted the filesystem because only a developer populated it by hand.
+`_slugify()` collapses anything outside `[a-z0-9]` to `-` (so `"Operating
+Systems!"` becomes `operating-systems`), which is what stops a value like
+`"../../etc"` from ever becoming a literal path segment. An empty result
+after slugifying (e.g. a course field of just punctuation) is rejected
+with a 400 rather than silently creating a directory named `""`.
+
+**`RAW_NOTES_DIR` and the `VoyageEmbedder` are now injected into
+`create_app`/`app.config`, extending the same dependency-injection
+pattern Stage 5 established for `client`/`embedder`/`store`.** This
+wasn't optional for testability: without it, `tests/test_api.py`'s
+upload tests would write real files into `backend/data/raw_notes/` on
+every test run — the actual notes tree, not a fixture. Injecting
+`raw_notes_dir` (defaulting to the real path in production, overridden to
+`tmp_path` in tests) keeps upload tests hermetic the same way the
+in-memory `NotesStore` fixture already keeps `/chat` tests hermetic.
+
+**Multiple files in one request are validated all-or-nothing before any
+of them touch disk, and are embedded in a single batched call — not one
+request or one Voyage call per file.** Two separate decisions bundled
+into one design:
+- *Validation ordering*: every file's extension is checked before any
+  file is saved. Rejecting file 3 of 5 after files 1-2 are already
+  written would leave a partially-applied upload with no clean way to
+  report "some of this succeeded" back to a simple form UI — failing the
+  whole batch atomically is a much simpler contract.
+- *Embedding batching*: all files' chunks are concatenated and passed to
+  a single `embed_and_store()` call, mirroring Stage 2's documented
+  reasoning almost exactly — the whole reason that pipeline batches
+  Voyage calls across files instead of per-file is to avoid burning a
+  rate-limit slot per file, and a multi-file upload is precisely the
+  scenario that reasoning was written for. `NotesStore.delete_by_source_file`
+  is still called per source file inside `embed_and_store`, so re-uploading
+  a file that already exists still correctly replaces its old chunks
+  rather than duplicating them.
+
+**Upload is synchronous, like every other endpoint in this API — no job
+queue was introduced.** `/chat` already blocks for the duration of the
+agent loop (which can itself make several Claude and Voyage calls);
+`/upload` blocking for the duration of chunking + one embedding call is
+the same shape of request, not a new architectural pattern. A background
+job queue would be the right call at a very different scale (large PDFs,
+many concurrent uploads) but would be pure speculative complexity here.
+
+**On any failure downstream of saving — empty extracted content, or a
+Voyage API error — the saved file(s) are deleted from disk before the
+error response is returned.** Otherwise a failed upload would leave an
+un-embedded file sitting in `data/raw_notes/`: invisible to the running
+app (nothing points at it in ChromaDB) but silently present for the next
+full re-ingestion run to pick up, which would be a confusing, delayed
+side effect of a request the user was told had failed. Same
+leak-nothing-to-the-client error posture as `/chat`: a broad
+`except Exception` logs server-side and returns a generic message, never
+a raw exception string.
+
+**Adding upload does not add a way to scope retrieval — that boundary
+from Stage 5 is unchanged.** Upload only ever *adds* documents to the
+corpus; it doesn't give the web UI any new ability to constrain which
+documents `search_notes` considers for a given question. The "the agent
+decides when and how to search, not a UI control" position documented in
+the Stage 5 section above still holds exactly as stated.
+
+**Frontend: a `+` toggle next to the message input, not a header
+button.** The upload form was originally a labeled button in the header;
+it moved to a circular `+` beside the chat input (rotating into an `×`
+when the panel is open) to match the attach-file affordance users
+already expect from chat UIs, and to keep the header reserved for
+identity (`Coursework RAG Agent`) rather than controls. The header's
+"Searching your notes across: ..." course list was also removed at the
+same time — it was read-only informational text with no control attached
+to it, and removing it is what let the header shrink to a single line.
+
 ## Build plan
 
 1. ✅ Repo scaffold + ingestion/chunking pipeline
@@ -654,4 +744,5 @@ and Voyage APIs for the first time in the whole project:
 7. ✅ Docker + docker-compose
 8. ✅ GitHub Actions CI
 9. ✅ Deployment (Render backend + Vercel frontend, live) + this doc
-10. (Stretch) Evaluation script + pgvector upgrade
+10. ✅ Web upload (`POST /api/upload`, multi-file, reuses the Stage 1/2 pipeline)
+11. (Stretch) Evaluation script + pgvector upgrade

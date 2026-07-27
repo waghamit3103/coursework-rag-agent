@@ -22,6 +22,25 @@ export async function sendMessage(message, conversationId) {
   return response.json();
 }
 
+export async function uploadNotes(files, course, topic) {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("file", file);
+  }
+  formData.append("course", course);
+  formData.append("topic", topic);
+
+  const response = await fetch(`${API_BASE_URL}/api/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return response.json();
+}
+
 export async function getCourses() {
   const response = await fetch(`${API_BASE_URL}/api/courses`);
   if (!response.ok) {

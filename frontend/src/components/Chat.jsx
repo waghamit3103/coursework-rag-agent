@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getCourses, sendMessage } from "../api";
 import MessageBubble from "./MessageBubble";
 import LoadingIndicator from "./LoadingIndicator";
+import UploadNotes from "./UploadNotes";
 
 export default function Chat() {
   const [messages, setMessages] = useState([]);
@@ -9,14 +10,18 @@ export default function Chat() {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [courses, setCourses] = useState([]);
-  const [coursesError, setCoursesError] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
   const messagesEndRef = useRef(null);
 
-  useEffect(() => {
+  const refreshCourses = useCallback(() => {
     getCourses()
       .then(setCourses)
-      .catch(() => setCoursesError(true));
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refreshCourses();
+  }, [refreshCourses]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -57,19 +62,13 @@ export default function Chat() {
   return (
     <div className="chat">
       <header className="chat__header">
-        <h1>Coursework RAG Agent</h1>
-        {!coursesError && courses.length > 0 && (
-          <p className="chat__courses">
-            Searching your notes across: {courses.join(", ")}
-          </p>
-        )}
+        <h1>NoteSearch</h1>
       </header>
 
       <div className="chat__messages">
         {messages.length === 0 && (
           <div className="chat__empty-state">
-            Ask a question about your Data Structures & Algorithms, Operating
-            Systems, Machine Learning, or OOP notes.
+            Ask a question about your notes!
           </div>
         )}
         {messages.map((m, i) => (
@@ -85,7 +84,22 @@ export default function Chat() {
         <div ref={messagesEndRef} />
       </div>
 
+      {showUpload && (
+        <div className="chat__upload-panel">
+          <UploadNotes courses={courses} onUploaded={refreshCourses} />
+        </div>
+      )}
+
       <div className="chat__input-row">
+        <button
+          type="button"
+          className={`chat__upload-toggle${showUpload ? " chat__upload-toggle--active" : ""}`}
+          onClick={() => setShowUpload((v) => !v)}
+          aria-label={showUpload ? "Close upload notes" : "Upload notes"}
+          title={showUpload ? "Close upload notes" : "Upload notes"}
+        >
+          +
+        </button>
         <textarea
           className="chat__input"
           value={inputValue}
