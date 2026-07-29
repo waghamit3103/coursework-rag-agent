@@ -23,10 +23,6 @@ checks whether what came back actually answers the question, and
 re-queries if it doesn't. So it's an agent that has a retrieval tool,
 not a retrieve-then-generate pipeline that always runs the same steps.
 
-**Status:** all 9 core stages done — ingestion/chunking, embedding/vector
-storage, retrieval, agent loop, Flask API + React frontend, pytest suite,
-Docker/docker-compose, CI, and it's actually deployed. See
-[ARCHITECTURE.md](ARCHITECTURE.md) for the design writeup and build plan.
 
 
 ## Project layout
